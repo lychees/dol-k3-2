@@ -882,11 +882,32 @@ if (P.character > CHARACTER_NAMES.length - 1) P.character = 0;
 
 const flag = () => P.fleet[0];                      // flagship
 const curShip = () => shipByName(flag().ship);      // flagship's type
-const fleetCargoCap = () => P.fleet.reduce((a, f) => a + shipByName(f.ship).cargo, 0);
-const fleetGuns = () => P.fleet.reduce((a, f) => a + shipByName(f.ship).guns, 0);
+
+// effective stats of a fleet ship, including refit mods
+function shipStats(f) {
+  const base = shipByName(f.ship);
+  const m = f.mods ?? { guns: 0, hull: 0, cargo: 0, speed: 0 };
+  return {
+    ...base,
+    guns: Math.round(base.guns * (1 + 0.2 * m.guns)),
+    hull: Math.round(base.hull * (1 + 0.2 * m.hull)),
+    cargo: Math.round(base.cargo * (1 + 0.2 * m.cargo)),
+    speed: +(base.speed + 0.3 * m.speed).toFixed(2),
+  };
+}
+const flagStats = () => shipStats(flag());
+const REFIT_CATS = [['guns', 'Extra cannons', '+20% guns / lv'],
+                    ['hull', 'Reinforced hull', '+20% hull / lv'],
+                    ['cargo', 'Expanded hold', '+20% cargo / lv'],
+                    ['speed', 'Streamlined hull', '+0.3 speed / lv']];
+const REFIT_MAX_LV = 3;
+const refitCost = (f, cat) => Math.round(shipByName(f.ship).price * 0.2);
+
+const fleetCargoCap = () => P.fleet.reduce((a, f) => a + shipStats(f).cargo, 0);
+const fleetGuns = () => P.fleet.reduce((a, f) => a + shipStats(f).guns, 0);
 const fleetMinCrew = () => P.fleet.reduce((a, f) => a + shipByName(f.ship).minCrew, 0);
 const fleetMaxCrew = () => P.fleet.reduce((a, f) => a + shipByName(f.ship).maxCrew, 0);
-const fleetSpeed = () => Math.min(...P.fleet.map(f => shipByName(f.ship).speed));
+const fleetSpeed = () => Math.min(...P.fleet.map(f => shipStats(f).speed));
 
 // --- mates / cabins / equipment bonuses --------------------------------------
 const cabinMate = slot => P.cabins[slot] ? matesData[P.cabins[slot]] : null;
@@ -1076,10 +1097,10 @@ function buildingMenu(b) {
       return menu;
     }
     case 'dry_dock': {
-      const dmg = ship.hull - flag().hull;
+      const dmg = flagStats().hull - flag().hull;
       return [
-        { label: `Repair hull (${flag().hull}/${ship.hull})`, cost: dmg * 2, disabled: dmg <= 0,
-          action() { P.gold -= dmg * 2; flag().hull = ship.hull;
+        { label: `Repair hull (${flag().hull}/${flagStats().hull})`, cost: dmg * 2, disabled: dmg <= 0,
+          action() { P.gold -= dmg * 2; flag().hull = flagStats().hull;
                      setBuildingText('Hull patched and caulked. She\'s seaworthy again.'); } },
         { label: 'Buy a new ship', action() { openPanel('shipyard'); } },
         { label: 'Outfit ship', action() { openPanel('outfit'); } },
@@ -1387,60 +1408,105 @@ function renderShipyard() {
   document.getElementById('shipyard-info').innerHTML =
     `gold: <b>${P.gold}g</b> &nbsp;·&nbsp; fleet: <b>${P.fleet.length}/5</b> ships`;
   const div = document.getElementById('shipyard-table');
-  let html = '<table><tr><th></th><th>ship</th><th>speed</th><th>tack</th><th>cargo</th><th>hull</th><th>guns</th><th>crew</th><th>price</th><th></th></tr>';
-  for (const s of SHIPS) {
-    const own = P.fleet.some(f => f.ship === s.name);
+
+  if (refitIdx !== null) { renderRefit(div); return; }
+
+  // --- your fleet (instances; duplicates allowed) ---
+  let html = `<h3 style="color:#ffd94d;margin:4px 0">Your fleet</h3>` +
+    '<table><tr><th></th><th>ship</th><th>hull</th><th>guns</th><th>cargo</th><th>speed</th><th>mods</th><th></th></tr>';
+  P.fleet.forEach((f, i) => {
+    const s = shipStats(f);
+    const m = f.mods ?? {};
+    const modStr = ['guns', 'hull', 'cargo', 'speed'].filter(c => m[c]).map(c => `${c}+${m[c]}`).join(' ');
     html += `<tr><td><img class="ship-img" src="./assets/ships/${s.name.toLowerCase()}.png" alt=""></td>` +
-      `<td>${s.name}${own ? ' ★' : ''}</td>` +
+      `<td>${s.name}</td><td class="num">${Math.ceil(f.hull)}/${s.hull}</td>` +
+      `<td class="num">${s.guns}</td><td class="num">${s.cargo}</td><td class="num">${s.speed.toFixed(1)}</td>` +
+      `<td class="num">${modStr || '—'}</td><td></td></tr>`;
+  });
+  html += `</table><h3 style="color:#ffd94d;margin:8px 0 4px">Buy ships</h3>` +
+    '<table><tr><th></th><th>ship</th><th>speed</th><th>tack</th><th>cargo</th><th>hull</th><th>guns</th><th>crew</th><th>price</th><th></th></tr>';
+  for (const s of SHIPS) {
+    html += `<tr><td><img class="ship-img" src="./assets/ships/${s.name.toLowerCase()}.png" alt=""></td>` +
+      `<td>${s.name}</td>` +
       `<td class="num">${s.speed.toFixed(1)}</td><td class="num">${s.tacking}</td><td class="num">${s.cargo}</td>` +
       `<td class="num">${s.hull}</td><td class="num">${s.guns}</td>` +
       `<td class="num">${s.minCrew}-${s.maxCrew}</td>` +
       `<td class="num">${s.price}</td><td></td></tr>`;
   }
   div.innerHTML = html + '</table>';
-  const trs = div.querySelectorAll('tr');
+
+  // fleet instance buttons
+  const fleetRows = div.querySelectorAll('table')[0].querySelectorAll('tr');
+  P.fleet.forEach((f, i) => {
+    const td = fleetRows[i + 1].lastChild;
+    rowButton(td, i === 0 ? 'flagship' : 'make flagship', i === 0, () => {
+      const [x] = P.fleet.splice(i, 1);
+      P.fleet.unshift(x);
+      save(); renderShipyard();
+    });
+    rowButton(td, 'refit', false, () => { refitIdx = i; renderShipyard(); });
+    const capWithout = fleetCargoCap() - shipStats(f).cargo;
+    rowButton(td, 'sell', P.fleet.length <= 1 || cargoUsed() > capWithout, () => {
+      P.gold += Math.floor(shipByName(f.ship).price / 2);
+      P.fleet.splice(i, 1);
+      save(); renderShipyard();
+    }, P.fleet.length <= 1 ? 'your last ship' : cargoUsed() > capWithout ? 'cargo would not fit' : `+${Math.floor(shipByName(f.ship).price / 2)}g`);
+  });
+  // buy buttons (duplicates allowed — fleet just needs room)
+  const buyRows = div.querySelectorAll('table')[1].querySelectorAll('tr');
   SHIPS.forEach((s, i) => {
-    const td = trs[i + 1].lastChild;
-    const ownedIdx = P.fleet.findIndex(f => f.ship === s.name);
-    if (ownedIdx >= 0) {
-      // set as flagship / sell
-      const fb = document.createElement('button');
-      fb.textContent = ownedIdx === 0 ? 'flagship' : 'make flagship';
-      fb.disabled = ownedIdx === 0;
-      fb.onclick = () => {
-        const [f] = P.fleet.splice(ownedIdx, 1);
-        P.fleet.unshift(f);
-        save(); renderShipyard();
-      };
-      td.appendChild(fb);
-      const sb = document.createElement('button');
-      sb.textContent = 'sell';
-      const capWithout = fleetCargoCap() - s.cargo;
-      sb.disabled = P.fleet.length <= 1 || cargoUsed() > capWithout;
-      sb.title = P.fleet.length <= 1 ? 'your last ship' :
-                 cargoUsed() > capWithout ? 'cargo would not fit' : `+${Math.floor(s.price / 2)}g`;
-      sb.onclick = () => {
-        P.gold += Math.floor(s.price / 2);
-        P.fleet.splice(ownedIdx, 1);
-        save(); renderShipyard();
-      };
-      td.appendChild(sb);
-    } else {
-      const btn = document.createElement('button');
-      btn.textContent = 'buy';
-      btn.disabled = P.gold < s.price || P.fleet.length >= 5 || cargoUsed() > fleetCargoCap() + s.cargo;
-      btn.title = P.fleet.length >= 5 ? 'fleet is full (5 ships)' : '';
-      btn.onclick = () => {
+    rowButton(buyRows[i + 1].lastChild, 'buy',
+      P.gold < s.price || P.fleet.length >= 5 || cargoUsed() > fleetCargoCap() + s.cargo,
+      () => {
         P.gold -= s.price;
         P.fleet.push({ ship: s.name, hull: s.hull });
         save(); renderShipyard();
-      };
-      td.appendChild(btn);
-    }
+      }, P.fleet.length >= 5 ? 'fleet is full (5 ships)' : '');
   });
 }
 
-definePanel('shipyard', shipyardPanel, { building: true, render: renderShipyard });
+// --- refit view for one fleet ship ---
+let refitIdx = null;
+function renderRefit(div) {
+  const f = P.fleet[refitIdx];
+  const base = shipByName(f.ship);
+  const s = shipStats(f);
+  f.mods = f.mods ?? { guns: 0, hull: 0, cargo: 0, speed: 0 };
+  let html = `<h3 style="color:#ffd94d;margin:4px 0">Refit — ${f.ship}</h3>` +
+    '<table><tr><th>stat</th><th>base</th><th>now</th><th>upgrade</th><th></th></tr>';
+  const rows = [
+    ['guns', 'guns', base.guns, s.guns],
+    ['hull', 'hull (max)', base.hull, s.hull],
+    ['cargo', 'cargo', base.cargo, s.cargo],
+    ['speed', 'speed', base.speed.toFixed(1), s.speed.toFixed(1)],
+  ];
+  for (const [cat, label, bv, nv] of rows) {
+    const lv = f.mods[cat];
+    html += `<tr><td>${label}</td><td class="num">${bv}</td><td class="num"><b>${nv}</b></td>` +
+      `<td class="num">${lv >= REFIT_MAX_LV ? 'max' : `lv ${lv} → ${lv + 1} (${refitCost(f, cat)}g)`}</td><td></td></tr>`;
+  }
+  div.innerHTML = html + '</table>';
+  const trs = div.querySelectorAll('tr');
+  rows.forEach(([cat], i) => {
+    const lv = f.mods[cat];
+    rowButton(trs[i + 1].lastChild, 'upgrade',
+      lv >= REFIT_MAX_LV || P.gold < refitCost(f, cat),
+      () => {
+        P.gold -= refitCost(f, cat);
+        f.mods[cat]++;
+        if (cat === 'hull') f.hull += Math.round(shipByName(f.ship).hull * 0.2);   // reinforced hull also adds current hp
+        save(); renderShipyard();
+      });
+  });
+  // back row
+  const back = document.createElement('button');
+  back.textContent = '← back to shipyard';
+  back.onclick = () => { refitIdx = null; renderShipyard(); };
+  div.appendChild(back);
+}
+
+definePanel('shipyard', shipyardPanel, { building: true, render: renderShipyard,
+  onClose: () => { refitIdx = null; } });
 
 // ---------------------------------------------------------------------------
 // Mates & cabins panel
@@ -1847,7 +1913,7 @@ function shipwreck(reason = 'battle') {
   P.gold = Math.floor(P.gold / 2);
   P.cargo = {};
   P.cargoCost = {};
-  flag().hull = Math.floor(curShip().hull * 0.3);
+  flag().hull = Math.floor(flagStats().hull * 0.3);
   P.crew = Math.max(P.crew, fleetMinCrew());
   // limp to the nearest discovered port
   const ids = discovered.size ? [...discovered] : [1];
@@ -1956,8 +2022,8 @@ function updateBattle(dt) {
   battle.cd -= dt;
   const e = battle.enemy;
   document.getElementById('battle-my-label').textContent =
-    `${curShip().name} — hull ${Math.ceil(flag().hull)}/${curShip().hull} · crew ${P.crew}`;
-  document.getElementById('battle-my-bar').style.width = `${flag().hull / curShip().hull * 100}%`;
+    `${curShip().name} — hull ${Math.ceil(flag().hull)}/${flagStats().hull} · crew ${P.crew}`;
+  document.getElementById('battle-my-bar').style.width = `${flag().hull / flagStats().hull * 100}%`;
   document.getElementById('battle-enemy-label').textContent =
     `${e.ship.name} — hull ${Math.ceil(e.hull)}/${e.ship.hull} · crew ${e.crew}`;
   document.getElementById('battle-enemy-bar').style.width = `${Math.max(0, e.hull) / e.ship.hull * 100}%`;

@@ -281,6 +281,15 @@ the uw2ol project, which took them from the original Uncharted Waters 2
   Tell her a story (small fame chance), Buy her a drink (100g →
   discovery coordinates). Submenu persistence fixed by letting actions
   keep their custom menu (return true).
+### 18. 船厂改装 + 同型复购
+- Shipyard is now two sections: **Your fleet** (every ship instance with
+  hull/guns/cargo/speed/mods and flagship/refit/sell buttons) and **Buy
+  ships** (all 22 models, duplicates allowed — buy three Sloops if you like).
+- **Per-ship refit**: each fleet ship can be upgraded independently in 4
+  categories (guns/hull/cargo/speed), 3 levels each (+20% or +0.3 speed
+  per level, 20% of the ship's price per level). `shipStats(f)` computes
+  effective stats with mods; fleet totals (cargo/guns/speed) and the
+  flagship's max hull all respect refits. Hull mods also add current hp.
 ## Key file formats (cheat sheet)
 
 | Data | Format |
