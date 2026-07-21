@@ -2492,7 +2492,7 @@ function tick() {
     `discoveries<br><b>${discoveriesFound.size} / ${villages.length}</b>`;
   drawMinimap();
 
-  renderer.render(scene === 'sea' ? seaScene : portScene, camera);
+  renderer.render(scene === 'port' ? portScene : seaScene, camera);
 }
 
 tick();
