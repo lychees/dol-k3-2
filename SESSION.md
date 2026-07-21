@@ -207,6 +207,16 @@ the uw2ol project, which took them from the original Uncharted Waters 2
   unthrottled making wall-clock-dependent tests flaky — game logic
   (2.5s cooldowns etc.) was correct all along (proven via fireBall
   instrumentation).
+### 12. 主角修正 + 港口 NPC
+- **Protagonist fix**: person_tileset cols 24-31 are NOT a 4th character —
+  they're static npc pairs (agent 24-25, old man 26-27, dog 28-29, guard
+  30-31). The picker now offers the 3 valid walk-sprite characters:
+  João (cols 0-7), Catalina (woman npc, 8-15), Otto (man npc, 16-23).
+- **Port NPCs** (from uw2ol's port_npc.py): 2 men + 2 women wander each
+  port with proper 4-direction 2-frame walk animation and random-walk AI;
+  static npcs idle-animate at entrances — dog at the bar, old man at the
+  inn, agent at the market, guard at the palace. All hidden at night,
+  like in uw2ol.
 ## Key file formats (cheat sheet)
 
 | Data | Format |

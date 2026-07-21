@@ -23,7 +23,7 @@ with sync_playwright() as p:
 
     # --- character picker on start overlay ---
     n_chars = page.evaluate("document.querySelectorAll('.char-portrait').length")
-    check(f"4 protagonists on start screen ({n_chars})", n_chars == 4)
+    check(f"3 protagonists on start screen ({n_chars})", n_chars == 3)
     page.screenshot(path="char_select.png")
     page.click(".char-portrait >> nth=1")   # Catalina
     page.wait_for_timeout(200)

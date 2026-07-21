@@ -230,11 +230,14 @@ portScene.add(person);
 const personPos = new THREE.Vector3(48, 0.4, 48);
 let personDir = 'down';
 
-const CHARACTER_NAMES = ['João Ferrero', 'Catalina Erantzo', 'Otto Baynes', 'Pietro Conti'];
+// person_tileset: cols 0-7 player, 8-15 woman npc, 16-23 man npc;
+// cols 24-31 are static npc pairs (agent/old man/dog/guard), NOT walkable characters
+const CHARACTER_NAMES = ['João Ferrero', 'Catalina Erantzo', 'Otto Baynes'];
+const CHARACTER_BLOCK = [0, 8, 16];
 
 function updatePersonSprite() {
   const col = DIRECTION_COL[personDir] + animFrame;
-  personMap.offset.set((P.character * 8 + col) / 32, 0);
+  personMap.offset.set((CHARACTER_BLOCK[P.character] + col) / 32, 0);
 }
 
 // port state
@@ -302,6 +305,7 @@ async function enterPort(pid) {
   scene = 'port';
   camDist = 20;
   endBattle();                    // reaching port shakes off any pursuers
+  spawnPortNpcs();
   const name = ports.find(p => p.id === pid)?.name ?? meta.name;
   showBanner(`${name}<small>press Esc at any time to set sail</small>`);
   playMusic(portMusicFor(pid));
@@ -317,6 +321,108 @@ function setSail() {
   showBanner(`Set sail from ${name}`);
   playSfx('./assets/sounds/wave.ogg');
   playMusic(seaMusicFor(portId));
+}
+
+// ---------------------------------------------------------------------------
+// Port NPCs (uw2ol port_npc.py): wanderers + static npcs at building doors
+// ---------------------------------------------------------------------------
+let npcs = [];         // wandering men/women
+let staticNpcs = [];   // dog / old man / agent / guard at entrances
+
+function makeNpcMesh(frameIdx) {
+  const map = personTex.clone();
+  map.needsUpdate = true;
+  map.repeat.set(1 / 32, 1);
+  map.offset.set(frameIdx / 32, 0);
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(2, 2),
+    new THREE.MeshBasicMaterial({ map, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide }));
+  mesh.rotation.x = -Math.PI / 2;
+  return mesh;
+}
+
+const NPC_FRAMES = {
+  man:   { up: 16, right: 18, down: 20, left: 22 },
+  woman: { up: 8,  right: 10, down: 12, left: 14 },
+};
+const STATIC_NPCS = [
+  { building: 2, frames: [28, 29] },   // dog at the bar
+  { building: 5, frames: [26, 27] },   // old man at the inn
+  { building: 1, frames: [24, 25] },   // agent at the market
+  { building: 6, frames: [30, 31] },   // guard at the palace
+];
+
+function spawnPortNpcs() {
+  for (const n of [...npcs, ...staticNpcs]) portScene.remove(n.mesh);
+  npcs = [];
+  staticNpcs = [];
+
+  // 2 men + 2 women wandering near the harbor
+  const harbor = portBuildings.find(b => b.id === 4);
+  const cx = harbor ? harbor.x : 48, cz = harbor ? harbor.y + 2 : 60;
+  for (let i = 0; i < 4; i++) {
+    const kind = i % 2 === 0 ? 'man' : 'woman';
+    let sx = cx + 0.5, sz = cz + 0.5;
+    for (let t = 0; t < 20; t++) {
+      const x = cx + Math.floor(Math.random() * 17 - 8) + 0.5;
+      const z = cz + Math.floor(Math.random() * 17 - 8) + 0.5;
+      if (walkableAt(x, z)) { sx = x; sz = z; break; }
+    }
+    const mesh = makeNpcMesh(NPC_FRAMES[kind].down);
+    mesh.position.set(sx, 0.4, sz);
+    portScene.add(mesh);
+    npcs.push({ kind, mesh, pos: new THREE.Vector3(sx, 0.4, sz), dir: 'down',
+                frame: 0, animT: Math.random() * 0.3, moveT: 0, mvx: 0, mvz: 0 });
+  }
+
+  // static npcs in front of their buildings
+  for (const s of STATIC_NPCS) {
+    const b = portBuildings.find(x => x.id === s.building);
+    if (!b) continue;
+    const mesh = makeNpcMesh(s.frames[0]);
+    mesh.position.set(b.x + 0.5, 0.4, b.y + 1.5);
+    portScene.add(mesh);
+    staticNpcs.push({ mesh, frames: s.frames, animT: Math.random() * 0.6, cur: 0 });
+  }
+}
+
+function updateNpcs(dt, phase) {
+  const visible = phase !== 'night';   // uw2ol: no npcs out at night
+  for (const n of npcs) {
+    n.mesh.visible = visible;
+    if (!visible) continue;
+    n.animT += dt;
+    n.moveT -= dt;
+    if (n.moveT <= 0) {
+      n.moveT = 1 + Math.random() * 2;
+      if (Math.random() < 0.3) { n.mvx = 0; n.mvz = 0; }
+      else {
+        const ang = Math.floor(Math.random() * 4) * Math.PI / 2;
+        n.mvx = Math.cos(ang);
+        n.mvz = Math.sin(ang);
+      }
+    }
+    if (n.mvx || n.mvz) {
+      const sp = 2 * dt;
+      const nx = n.pos.x + n.mvx * sp, nz = n.pos.z + n.mvz * sp;
+      if (walkableAt(nx, nz)) { n.pos.x = nx; n.pos.z = nz; }
+      else { n.mvx = -n.mvx; n.mvz = -n.mvz; }
+      n.dir = n.mvz < 0 ? 'up' : n.mvz > 0 ? 'down' : n.mvx < 0 ? 'left' : 'right';
+      if (n.animT > 0.35) { n.animT = 0; n.frame ^= 1; }
+    }
+    n.mesh.position.copy(n.pos);
+    n.mesh.material.map.offset.set((NPC_FRAMES[n.kind][n.dir] + n.frame) / 32, 0);
+  }
+  for (const s of staticNpcs) {
+    s.mesh.visible = visible;
+    if (!visible) continue;
+    s.animT += dt;
+    if (s.animT > 0.6) {
+      s.animT = 0;
+      s.cur ^= 1;
+      s.mesh.material.map.offset.set(s.frames[s.cur] / 32, 0);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -370,6 +476,7 @@ if (!P.fleet) {
 delete P.ship;
 delete P.hull;
 P.cargoCost = P.cargoCost ?? {};
+if (P.character > CHARACTER_NAMES.length - 1) P.character = 0;
 
 const flag = () => P.fleet[0];                      // flagship
 const curShip = () => shipByName(flag().ship);      // flagship's type
@@ -1789,6 +1896,12 @@ window.UW = {
                                balls: battle.balls.length,
                                ex: battle.enemy.pos.x, ez: battle.enemy.pos.z },
   getPirates: () => pirates.length,
+  getNpcs: () => ({ wanderers: npcs.length, static: staticNpcs.length }),
+  getNpcDebug: () => ({
+    w: npcs.map(n => ({ x: n.pos.x, z: n.pos.z, col: NPC_FRAMES[n.kind][n.dir] + n.frame,
+                        visible: n.mesh.visible })),
+    s: staticNpcs.map(s => ({ visible: s.mesh.visible })),
+  }),
   canBoard,
   tryBoard,
   // test-only helpers (deterministic checks in slow headless environments)
@@ -1811,7 +1924,7 @@ window.UW = {
     c.title = name;
     const g = c.getContext('2d');
     g.imageSmoothingEnabled = false;
-    g.drawImage(personTex.image, (ci * 8 + 4) * 32, 0, 32, 32, 0, 0, 64, 64);
+    g.drawImage(personTex.image, (CHARACTER_BLOCK[ci] + 4) * 32, 0, 32, 32, 0, 0, 64, 64);
     c.onclick = () => {
       P.character = ci;
       picker.querySelectorAll('.char-portrait').forEach(x => x.classList.remove('selected'));
@@ -1927,6 +2040,7 @@ function tick() {
     personPos.z = THREE.MathUtils.clamp(personPos.z, 1, PORT_SIZE - 2);
     person.position.copy(personPos);
     updatePersonSprite();
+    updateNpcs(dt, a);
 
     camera.position.set(personPos.x, camDist * Math.cos(CAM_TILT), personPos.z + camDist * Math.sin(CAM_TILT));
     camera.lookAt(personPos.x, 0, personPos.z);
