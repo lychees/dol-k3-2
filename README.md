@@ -6,27 +6,37 @@ A browser sailing game built with **three.js**, using assets from the
 
 **Play online: https://lychees.github.io/dol-k3-2/game/**
 
+Design doc: [DESIGN.md](DESIGN.md) · Dev log: [SESSION.md](SESSION.md)
+
 ## Features
 
-- 🗺️ The full 2160×1080-tile world map rendered with a custom tilemap shader
-- 🌅 Day/night cycle cross-fading the original dawn/day/dusk/night tilesets
-- ⛵ Sail with WASD/arrow keys, animated ship sprite, coast collision
-- ⚓ Enter all **130 ports**: walk the streets with the original person sprite,
-  visit 12 kinds of buildings (market, bar, inn, palace, church, …)
-- 🗿 Go ashore near **98 discovery sites** (Stonehenge, Moai, …) with original
-  artwork and descriptions
-- 🧭 Lon/lat HUD, live minimap (world & port), port/building music
+- 🗺️ Full 2160×1080-tile world map with a custom tilemap shader, day/night cycle
+- ⛵ Sail, trade 46 goods across 13 regional economies, bank with interest
+- ⚓ Enter all **130 ports**: walk the streets, talk to NPCs, visit 12 building types
+- 🏛️ Market, shipyard (22 ship types), bar (mates & sailors), dry dock, bank,
+  inn, palace, church, MSC & job house quests, item shop, fortune house
+- 🚢 Fleet of up to 5 ships, 6 cabin types, ship equipment (sails/cannons/
+  ram/figurehead/boarding planks/armor)
+- ⚔️ Real-time naval battles with boarding melee (dual health: hull & crew)
+- 🚶 Land expeditions: go ashore, Dragon-Quest style turn-based battles,
+  hero levels & equipment, 98 discovery sites
+- 🧑‍🤝‍🧑 50 recruitable mates, 3 protagonists, port NPCs with dialog
+- 🎵 Regional BGM (port/sea), sound effects
 
 ## Controls
 
 | Key | Action |
 |---|---|
 | `W A S D` / arrows | sail / walk |
-| `E` | enter port / enter building |
+| `E` | enter port / building, talk to NPC |
 | `G` | go ashore (near a discovery site) |
-| `Esc` | leave building / set sail |
-| mouse wheel | zoom |
+| `L` | land expedition / re-board ship |
+| `Space` | fire broadside (naval battle) |
+| `B` | boarding melee (naval battle) |
+| `I` | Captain's Log (fleet/crew/cargo/quests…) |
+| `Esc` | leave / set sail |
 | `M` | toggle music |
+| `` ` `` | developer mode |
 
 ## Run locally
 
@@ -39,9 +49,13 @@ python -m http.server 8734
 ## Repository layout
 
 - `game/` — the web game (static site, deployed via GitHub Pages)
-- `prepare_assets.py`, `prepare_port_assets.py` — asset export scripts
-  (require a local clone of uw2ol in `./uw2ol`)
-- `test_final.py`, `test_port.py` — Playwright smoke tests
+  - `index.html`, `main.js`, `lib/three.module.js`, `assets/`
+- `tools/` — asset pipeline scripts (require a local clone of uw2ol in `./uw2ol`)
+  - `prepare_assets.py` — world map, tiles, sprites, ports
+  - `prepare_port_assets.py` — port maps, buildings, goods, ships, mates, music
+- `tests/` — Playwright test suites
+- `tests/screenshots/` — screenshots captured by the test runs
+- `DESIGN.md` — design document
 - `SESSION.md` — development session log
 
 ## Credits

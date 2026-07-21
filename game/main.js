@@ -149,6 +149,25 @@ function makeTilemapMesh(data, cols, rows, texA, texB, tsCols = TILESET_COLS, ts
 }
 
 // ---------------------------------------------------------------------------
+// Sprite factory: flat textured quad lying on the map (ships, people, npcs)
+// ---------------------------------------------------------------------------
+function makeSprite(tex, repX, repY, size = 2) {
+  const map = tex.clone();
+  map.needsUpdate = true;
+  map.repeat.set(repX, repY);
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(size, size),
+    new THREE.MeshBasicMaterial({ map, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide }));
+  mesh.rotation.x = -Math.PI / 2;
+  return mesh;
+}
+// direction frame helpers (sprite sheets share the up/right/down/left layout)
+const shipFrame = (map, dir, frame, row) =>
+  map.offset.set((DIRECTION_COL[dir] + frame) / 8, (3 - row) / 4);
+const personFrame = (map, dir, frame, block) =>
+  map.offset.set((block + DIRECTION_COL[dir] + frame) / 32, 0);
+
+// ---------------------------------------------------------------------------
 // Sea scene
 // ---------------------------------------------------------------------------
 const seaScene = new THREE.Scene();
@@ -160,14 +179,8 @@ seaScene.add(world.mesh);
 // --- ship: flat quad just above the map, UV window into the sprite sheet ---
 // Sprite sheet: 8 cols x 4 rows of 32px; row 1 (from top) = player ship.
 // cols: up 0-1, right 2-3, down 4-5, left 6-7 (two frames each)
-const shipMap = shipTex.clone();
-shipMap.needsUpdate = true;
-shipMap.repeat.set(1 / 8, 1 / 4);
-const ship = new THREE.Mesh(
-  new THREE.PlaneGeometry(2, 2),
-  new THREE.MeshBasicMaterial({ map: shipMap, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide }),
-);
-ship.rotation.x = -Math.PI / 2;
+const ship = makeSprite(shipTex, 1 / 8, 1 / 4);
+const shipMap = ship.material.map;
 seaScene.add(ship);
 
 const DIRECTION_COL = { up: 0, right: 2, down: 4, left: 6,
@@ -176,8 +189,7 @@ let shipDir = 'down';
 let animFrame = 0, animTimer = 0;
 
 function updateShipSprite() {
-  const col = DIRECTION_COL[shipDir] + animFrame;
-  shipMap.offset.set(col / 8, (3 - curShip().row) / 4);   // sprite row by ship size
+  shipFrame(shipMap, shipDir, animFrame, curShip().row);   // sprite row by ship size
 }
 
 // start position: just off Lisbon (port tile 840,358 is land; sea to the west)
@@ -217,14 +229,8 @@ const portScene = new THREE.Scene();
 portScene.background = new THREE.Color(0x020a14);
 
 // person sprite: 32 cols x 1 row of 32px; cols: up 0-1, right 2-3, down 4-5, left 6-7
-const personMap = personTex.clone();
-personMap.needsUpdate = true;
-personMap.repeat.set(1 / 32, 1);
-const person = new THREE.Mesh(
-  new THREE.PlaneGeometry(2, 2),
-  new THREE.MeshBasicMaterial({ map: personMap, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide }),
-);
-person.rotation.x = -Math.PI / 2;
+const person = makeSprite(personTex, 1 / 32, 1);
+const personMap = person.material.map;
 portScene.add(person);
 
 const personPos = new THREE.Vector3(48, 0.4, 48);
@@ -236,8 +242,7 @@ const CHARACTER_NAMES = ['João Ferrero', 'Catalina Erantzo', 'Otto Baynes'];
 const CHARACTER_BLOCK = [0, 8, 16];
 
 function updatePersonSprite() {
-  const col = DIRECTION_COL[personDir] + animFrame;
-  personMap.offset.set((CHARACTER_BLOCK[P.character] + col) / 32, 0);
+  personFrame(personMap, personDir, animFrame, CHARACTER_BLOCK[P.character]);
 }
 
 // port state
@@ -325,22 +330,58 @@ function setSail() {
 }
 
 // ---------------------------------------------------------------------------
+// Panel manager: market/shipyard/mates/outfit are building sub-panels;
+// menu/dev/dialog are global. one place to open/close/query them all.
+// ---------------------------------------------------------------------------
+const PANELS = {};
+function definePanel(name, el, { building = false, render = null, onClose = null } = {}) {
+  PANELS[name] = { el, building, render, onClose, open: false };
+}
+function openPanel(name) {
+  const p = PANELS[name];
+  p.open = true;
+  if (p.building) buildingPanel.style.display = 'none';
+  p.render?.();
+  p.el.style.display = 'block';
+}
+function closePanel(name) {
+  const p = PANELS[name];
+  if (!p.open) return;
+  p.open = false;
+  p.el.style.display = 'none';
+  p.onClose?.();
+  if (p.building && inBuilding) buildingPanel.style.display = 'block';
+}
+const anyPanelOpen = () => Object.values(PANELS).some(p => p.open);
+function closeBuildingSubPanels() {
+  for (const n of ['market', 'shipyard', 'mates', 'outfit']) closePanel(n);
+}
+function closeBuildingSubPanelOpen() {
+  for (const n of ['market', 'shipyard', 'mates', 'outfit']) {
+    if (PANELS[n].open) { closePanel(n); return true; }
+  }
+  return false;
+}
+function closeTopPanel() {
+  // close the topmost closable panel; returns true if something was closed
+  for (const n of ['dialog', 'menu', 'dev', 'market', 'shipyard', 'mates', 'outfit']) {
+    if (PANELS[n].open) { closePanel(n); return true; }
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // Talk to NPCs (E): uw2ol's dialog lines + useful tips
 // ---------------------------------------------------------------------------
 const dialogPanel = document.getElementById('dialog-panel');
-let dialogOpen = false;
 
 function showDialog(name, text) {
-  dialogOpen = true;
   document.getElementById('dialog-name').textContent = name;
   document.getElementById('dialog-text').innerHTML = text;
-  dialogPanel.style.display = 'block';
+  openPanel('dialog');
 }
-function closeDialog() {
-  if (!dialogOpen) return;
-  dialogOpen = false;
-  dialogPanel.style.display = 'none';
-}
+definePanel('dialog', dialogPanel);
+const closeDialog = () => closePanel('dialog');
 
 function npcDialog(npc) {
   const kind = npc.kind;
@@ -405,14 +446,8 @@ let npcs = [];         // wandering men/women
 let staticNpcs = [];   // dog / old man / agent / guard at entrances
 
 function makeNpcMesh(frameIdx) {
-  const map = personTex.clone();
-  map.needsUpdate = true;
-  map.repeat.set(1 / 32, 1);
-  map.offset.set(frameIdx / 32, 0);
-  const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(2, 2),
-    new THREE.MeshBasicMaterial({ map, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide }));
-  mesh.rotation.x = -Math.PI / 2;
+  const mesh = makeSprite(personTex, 1 / 32, 1);
+  mesh.material.map.offset.set(frameIdx / 32, 0);
   return mesh;
 }
 
@@ -466,7 +501,7 @@ function updateNpcs(dt, phase) {
   const visible = phase !== 'night';   // uw2ol: no npcs out at night
   for (const n of npcs) {
     n.mesh.visible = visible;
-    if (!visible || dialogOpen) continue;   // wanderers pause while you chat
+    if (!visible || PANELS.dialog.open) continue;   // wanderers pause while you chat
     n.animT += dt;
     n.moveT -= dt;
     if (n.moveT <= 0) {
@@ -504,13 +539,8 @@ function updateNpcs(dt, phase) {
 // ---------------------------------------------------------------------------
 // Land exploration (L): walk ashore, Dragon-Quest style expeditions
 // ---------------------------------------------------------------------------
-const landPersonMap = personTex.clone();
-landPersonMap.needsUpdate = true;
-landPersonMap.repeat.set(1 / 32, 1);
-const landPerson = new THREE.Mesh(
-  new THREE.PlaneGeometry(2, 2),
-  new THREE.MeshBasicMaterial({ map: landPersonMap, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide }));
-landPerson.rotation.x = -Math.PI / 2;
+const landPerson = makeSprite(personTex, 1 / 32, 1);
+const landPersonMap = landPerson.material.map;
 landPerson.visible = false;
 seaScene.add(landPerson);
 
@@ -518,8 +548,7 @@ const landPos = new THREE.Vector3(0, 0.4, 0);
 let landDir = 'down';
 
 function updateLandPersonSprite() {
-  const col = DIRECTION_COL[landDir] + animFrame;
-  landPersonMap.offset.set((CHARACTER_BLOCK[P.character] + col) / 32, 0);
+  personFrame(landPersonMap, landDir, animFrame, CHARACTER_BLOCK[P.character]);
 }
 
 const LAND_MONSTERS = [
@@ -921,7 +950,7 @@ function buildingMenu(b) {
       { label: 'Set sail', action() { setSail(); } },
     ];
     case 'market': return [
-      { label: 'Trade goods', action() { openMarket(); } },
+      { label: 'Trade goods', action() { openPanel('market'); } },
     ];
     case 'inn': return [
       { label: 'Rest until morning', cost: 10, action() {
@@ -980,7 +1009,7 @@ function buildingMenu(b) {
           } });
         }
       }
-      menu.push({ label: 'Manage mates & cabins', action() { openMates(); } });
+      menu.push({ label: 'Manage mates & cabins', action() { openPanel('mates'); } });
       return menu;
     }
     case 'dry_dock': {
@@ -989,8 +1018,8 @@ function buildingMenu(b) {
         { label: `Repair hull (${flag().hull}/${ship.hull})`, cost: dmg * 2, disabled: dmg <= 0,
           action() { P.gold -= dmg * 2; flag().hull = ship.hull;
                      setBuildingText('Hull patched and caulked. She\'s seaworthy again.'); } },
-        { label: 'Buy a new ship', action() { openShipyard(); } },
-        { label: 'Outfit ship', action() { openOutfit(); } },
+        { label: 'Buy a new ship', action() { openPanel('shipyard'); } },
+        { label: 'Outfit ship', action() { openPanel('outfit'); } },
       ];
     }
     case 'palace': {
@@ -1146,10 +1175,7 @@ function openBuilding(b) {
 function hideBuildingPanel() {
   buildingPanel.style.display = 'none';
   pendingHire = null;
-  closeMarket();
-  closeShipyard();
-  closeMates();
-  closeOutfit();
+  closeBuildingSubPanels();
   if (inBuilding && ['bar', 'church', 'palace'].includes(inBuilding.name)) {
     playMusic(portMusicFor(portId));
   }
@@ -1160,7 +1186,6 @@ function hideBuildingPanel() {
 // Market
 // ---------------------------------------------------------------------------
 const marketPanel = document.getElementById('market-panel');
-let marketOpen = false;
 
 // --- goods icons: colored category badges with a monogram -------------------
 const GOOD_CATS = {
@@ -1217,6 +1242,17 @@ function marketRows() {
   return rows.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// small helper: append an action button to a table row cell
+function rowButton(td, label, disabled, onclick, title = '') {
+  const btn = document.createElement('button');
+  btn.textContent = label;
+  btn.disabled = disabled;
+  btn.title = title;
+  btn.onclick = onclick;
+  td.appendChild(btn);
+  return btn;
+}
+
 function renderMarket(msg = '') {
   document.getElementById('market-info').innerHTML =
     `gold: <b>${P.gold}g</b> &nbsp;·&nbsp; cargo space: <b>${cargoSpace()}</b> / ${curShip().cargo}` +
@@ -1265,42 +1301,24 @@ function renderMarket(msg = '') {
   };
   rows.forEach((r, i) => {
     const td = trs[i + 1].lastChild;
-    const mk = (label, fn, disabled) => {
-      const btn = document.createElement('button');
-      btn.textContent = label; btn.disabled = disabled; btn.onclick = fn;
-      td.appendChild(btn);
-    };
     if (r.buy != null) {
-      mk('+1', () => buyN(r, 1), P.gold < r.buy || cargoSpace() < 1);
-      mk('+10', () => buyN(r, 10), P.gold < r.buy * 10 || cargoSpace() < 10);
+      rowButton(td, '+1', P.gold < r.buy || cargoSpace() < 1, () => buyN(r, 1));
+      rowButton(td, '+10', P.gold < r.buy * 10 || cargoSpace() < 10, () => buyN(r, 10));
     }
     const hold = P.cargo[r.name] ?? 0;
     if (hold > 0) {
-      mk('-1', () => sellN(r, 1), false);
-      mk('all', () => sellN(r, hold), false);
+      rowButton(td, '-1', false, () => sellN(r, 1));
+      rowButton(td, 'all', false, () => sellN(r, hold));
     }
   });
 }
 
-function openMarket() {
-  marketOpen = true;
-  buildingPanel.style.display = 'none';
-  renderMarket();
-  marketPanel.style.display = 'block';
-}
-
-function closeMarket() {
-  if (!marketOpen) return;
-  marketOpen = false;
-  marketPanel.style.display = 'none';
-  if (inBuilding) buildingPanel.style.display = 'block';
-}
+definePanel('market', marketPanel, { building: true, render: renderMarket });
 
 // ---------------------------------------------------------------------------
 // Shipyard (buy one of the 22 ship types at the dry dock)
 // ---------------------------------------------------------------------------
 const shipyardPanel = document.getElementById('shipyard-panel');
-let shipyardOpen = false;
 
 function renderShipyard() {
   document.getElementById('shipyard-info').innerHTML =
@@ -1358,25 +1376,12 @@ function renderShipyard() {
   });
 }
 
-function openShipyard() {
-  shipyardOpen = true;
-  buildingPanel.style.display = 'none';
-  renderShipyard();
-  shipyardPanel.style.display = 'block';
-}
-
-function closeShipyard() {
-  if (!shipyardOpen) return;
-  shipyardOpen = false;
-  shipyardPanel.style.display = 'none';
-  if (inBuilding) buildingPanel.style.display = 'block';
-}
+definePanel('shipyard', shipyardPanel, { building: true, render: renderShipyard });
 
 // ---------------------------------------------------------------------------
 // Mates & cabins panel
 // ---------------------------------------------------------------------------
 const matesPanel = document.getElementById('mates-panel');
-let matesOpen = false;
 const CABINS = [['navigator', 'Navigator', '+5% speed / pt'],
                 ['gunner', 'Gunner', '+10% damage / pt'],
                 ['accountant', 'Accountant', '+5% sell / pt'],
@@ -1437,25 +1442,12 @@ function renderMates() {
   }
 }
 
-function openMates() {
-  matesOpen = true;
-  buildingPanel.style.display = 'none';
-  renderMates();
-  matesPanel.style.display = 'block';
-}
-
-function closeMates() {
-  if (!matesOpen) return;
-  matesOpen = false;
-  matesPanel.style.display = 'none';
-  if (inBuilding) buildingPanel.style.display = 'block';
-}
+definePanel('mates', matesPanel, { building: true, render: renderMates });
 
 // ---------------------------------------------------------------------------
 // Outfit panel: sails / cannons / ram / figurehead / boarding / armor
 // ---------------------------------------------------------------------------
 const outfitPanel = document.getElementById('outfit-panel');
-let outfitOpen = false;
 const OUTFIT_ITEMS = [
   { key: 'sails', tiers: [
     { name: 'Studding Sails', cost: 1500, desc: '+5% speed' },
@@ -1498,35 +1490,19 @@ function renderOutfit() {
   div.innerHTML = html + '</table>';
   const trs = div.querySelectorAll('tr');
   rows.forEach((r, i) => {
-    const td = trs[i + 1].lastChild;
-    const btn = document.createElement('button');
-    btn.textContent = r.owned ? 'owned' : 'buy';
-    btn.disabled = r.owned || r.locked || P.gold < r.cost;
-    btn.title = r.locked ? 'buy the previous tier first' : '';
-    btn.onclick = () => { P.gold -= r.cost; r.buy(); save(); renderOutfit(); };
-    td.appendChild(btn);
+    rowButton(trs[i + 1].lastChild, r.owned ? 'owned' : 'buy',
+              r.owned || r.locked || P.gold < r.cost,
+              () => { P.gold -= r.cost; r.buy(); save(); renderOutfit(); },
+              r.locked ? 'buy the previous tier first' : '');
   });
 }
 
-function openOutfit() {
-  outfitOpen = true;
-  buildingPanel.style.display = 'none';
-  renderOutfit();
-  outfitPanel.style.display = 'block';
-}
-
-function closeOutfit() {
-  if (!outfitOpen) return;
-  outfitOpen = false;
-  outfitPanel.style.display = 'none';
-  if (inBuilding) buildingPanel.style.display = 'block';
-}
+definePanel('outfit', outfitPanel, { building: true, render: renderOutfit });
 
 // ---------------------------------------------------------------------------
 // Captain's Log (I): fleet / crew / outfit / hero / cargo / discoveries / quests
 // ---------------------------------------------------------------------------
 const menuPanel = document.getElementById('menu-panel');
-let menuOpen = false;
 let menuTab = 'fleet';
 const MENU_TABS = [['fleet', 'Fleet'], ['crew', 'Crew'], ['outfit', 'Outfit'],
                    ['hero', 'Hero'], ['cargo', 'Cargo'], ['discoveries', 'Discoveries'],
@@ -1647,12 +1623,9 @@ function renderMenu() {
   });
 }
 
-function toggleMenu() {
-  menuOpen = !menuOpen;
-  if (menuOpen) { renderMenu(); menuPanel.style.display = 'block'; }
-  else menuPanel.style.display = 'none';
-}
-function closeMenu() { if (menuOpen) toggleMenu(); }
+definePanel('menu', menuPanel, { render: renderMenu });
+const toggleMenu = () => PANELS.menu.open ? closePanel('menu') : openPanel('menu');
+const closeMenu = () => closePanel('menu');
 
 // ---------------------------------------------------------------------------
 // Naval battles: pirates hunt at sea; SPACE fires a broadside
@@ -1668,14 +1641,8 @@ const ballGeo = new THREE.PlaneGeometry(0.5, 0.5);
 const ballMat = new THREE.MeshBasicMaterial({ color: 0x111111, side: THREE.DoubleSide });
 
 function makeShipMesh(row) {
-  const map = shipTex.clone();
-  map.needsUpdate = true;
-  map.repeat.set(1 / 8, 1 / 4);
-  map.offset.set(0, (3 - row) / 4);
-  const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(2, 2),
-    new THREE.MeshBasicMaterial({ map, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide }));
-  mesh.rotation.x = -Math.PI / 2;
+  const mesh = makeSprite(shipTex, 1 / 8, 1 / 4);
+  mesh.material.map.offset.set(0, (3 - row) / 4);
   return mesh;
 }
 
@@ -1913,7 +1880,7 @@ function updatePirates(dt) {
       if (p.animT > 0.35) { p.animT = 0; p.frame ^= 1; }
     }
     p.mesh.position.copy(p.pos);
-    p.mesh.material.map.offset.set((DIRECTION_COL[p.dir] + p.frame) / 8, (3 - p.ship.row) / 4);
+    shipFrame(p.mesh.material.map, p.dir, p.frame, p.ship.row);
   }
 }
 
@@ -2085,7 +2052,7 @@ addEventListener('keydown', e => {
   if (k === 'b') tryBoard();
   if (k === 'i') toggleMenu();
   if (k === 'l') {
-    if (!started || inBuilding || marketOpen || shipyardOpen || matesOpen || outfitOpen || menuOpen || devOpen) return;
+    if (!started || inBuilding || anyPanelOpen()) return;
     if (landBattle) return;
     if (scene === 'sea') landOn();
     else if (scene === 'land') reboard();
@@ -2116,15 +2083,12 @@ function nearestPort() {
 function onUseKey() {
   if (!started) return;
   if (discoveryPanel.style.display === 'block') { discoveryPanel.style.display = 'none'; return; }
-  if (dialogOpen) { closeDialog(); return; }
-  if (scene === 'port' && !inBuilding) {
+  if (PANELS.dialog.open) { closeDialog(); return; }
+  if (closeBuildingSubPanelOpen()) return;
+  if (scene === 'port' && !inBuilding && !buildingNear) {
     const npc = nearestNpc();
     if (npc) { npcDialog(npc); return; }
   }
-  if (marketOpen) { closeMarket(); return; }
-  if (shipyardOpen) { closeShipyard(); return; }
-  if (matesOpen) { closeMates(); return; }
-  if (outfitOpen) { closeOutfit(); return; }
   if (scene === 'sea') {
     const p = nearestPort();
     if (p) enterPort(p.id);
@@ -2144,13 +2108,7 @@ function onAshoreKey() {
 
 function onEscapeKey() {
   if (discoveryPanel.style.display === 'block') { discoveryPanel.style.display = 'none'; return; }
-  if (dialogOpen) { closeDialog(); return; }
-  if (menuOpen) { closeMenu(); return; }
-  if (devOpen) { toggleDev(); return; }
-  if (marketOpen) { closeMarket(); return; }
-  if (shipyardOpen) { closeShipyard(); return; }
-  if (matesOpen) { closeMates(); return; }
-  if (outfitOpen) { closeOutfit(); return; }
+  if (closeTopPanel()) return;
   if (scene === 'port') {
     if (inBuilding) hideBuildingPanel();
     else setSail();
@@ -2161,7 +2119,6 @@ function onEscapeKey() {
 // Developer mode (` to toggle): set gold and ship speed
 // ---------------------------------------------------------------------------
 const devPanel = document.getElementById('dev-panel');
-let devOpen = false;
 
 function refreshDevPanel() {
   document.getElementById('dev-gold').value = P.gold;
@@ -2170,11 +2127,8 @@ function refreshDevPanel() {
     `flagship: ${curShip().name} · fleet: ${P.fleet.length}/5 · speed override: ${P.devSpeed ?? 'off'}`;
 }
 
-function toggleDev() {
-  devOpen = !devOpen;
-  if (devOpen) { refreshDevPanel(); devPanel.style.display = 'block'; }
-  else { devPanel.style.display = 'none'; save(); }
-}
+definePanel('dev', devPanel, { render: refreshDevPanel, onClose: save });
+const toggleDev = () => PANELS.dev.open ? closePanel('dev') : openPanel('dev');
 
 document.getElementById('dev-gold-set').onclick = () => {
   P.gold = Math.max(0, Math.floor(+document.getElementById('dev-gold').value || 0));
@@ -2298,7 +2252,6 @@ window.UW = {
   setTime: t => { gameTime = t; },
   shipPos, personPos,
   setZoom: d => { camDist = d; },
-  topDown: h => { window.__topDown = h; },
   enterPort: id => enterPort(id),
   getScene: () => scene,
   getPortId: () => portId,
@@ -2406,7 +2359,7 @@ function tick() {
 
   // --- movement input ---
   let dx = 0, dz = 0;
-  const panelOpen = discoveryPanel.style.display === 'block' || inBuilding || marketOpen || shipyardOpen || matesOpen || outfitOpen || menuOpen || devOpen || !!landBattle || dialogOpen;
+  const panelOpen = discoveryPanel.style.display === 'block' || inBuilding || anyPanelOpen() || !!landBattle;
   if (started && !panelOpen) {
     if (keys['w'] || keys['arrowup']) dz -= 1;
     if (keys['s'] || keys['arrowdown']) dz += 1;
@@ -2479,10 +2432,6 @@ function tick() {
 
     camera.position.set(personPos.x, camDist * Math.cos(CAM_TILT), personPos.z + camDist * Math.sin(CAM_TILT));
     camera.lookAt(personPos.x, 0, personPos.z);
-    if (window.__topDown) {
-      camera.position.set(48, window.__topDown, 48);
-      camera.lookAt(48, 0, 48.01);
-    }
 
     // --- standing next to a building? (building tiles are unwalkable;
     //     the player stops in front of the door, like in uw2ol) ---
@@ -2492,7 +2441,7 @@ function tick() {
       const d = Math.hypot(b.x + 0.5 - personPos.x, b.y + 0.5 - personPos.z);
       if (d < bestD) { bestD = d; buildingNear = b; }
     }
-    if (!inBuilding && !dialogOpen) {
+    if (!inBuilding && !PANELS.dialog.open) {
       if (buildingNear) {
         showHint(`<span class="key">E</span> enter ${buildingNear.name.replace(/_/g, ' ')}`);
       } else {
