@@ -168,6 +168,22 @@ the uw2ol project, which took them from the original Uncharted Waters 2
   escape; entering port shakes pursuers.
 - Bug found in review: shipyard panel wasn't wired into Esc/E/panelOpen —
   fixed alongside.
+### 10. 酒馆招募 + 船只图片 + 船舱 + 船装
+- **Crew (sailors)**: hire/dismiss at the bar (100g each); ships have
+  min/max crew — below min crew: speed x0.7, broadside x0.5.
+- **Mates (航海士)**: 50 named characters from uw2ol's hash_mates (portrait
+  from figures.png 65x81 cells, stats: navigation/gunnery/accounting +
+  leadership/seamanship/luck). Each even-id port hosts one in its bar;
+  hire cost scales with skills.
+- **Cabins**: assign mates to Navigator (+5% speed/pt), Gunner
+  (+10% damage/pt), Accountant (+5% sell price/pt) in the Mates & Cabins
+  panel; one mate per cabin, dismiss anytime.
+- **Ship images**: real 128x96 art per ship in the shipyard table.
+- **Equipment (Outfit Ship at dry dock)**: sails x3 tiers (+5/10/15%
+  speed), cannons x3 tiers (broadside x1.3/1.6/2.0), Ram (15 hull/s on
+  contact), Figurehead (fatigue -50%, loot +25%), Boarding Planks
+  (B captures crippled ships for prize money), Armor Plating
+  (damage taken -25%). Tiered items unlock sequentially.
 ## Key file formats (cheat sheet)
 
 | Data | Format |

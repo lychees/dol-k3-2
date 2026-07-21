@@ -62,6 +62,17 @@
   .pos { color: #4ade80; }
   .neg { color: #f87171; }
   #shipyard-panel { max-width: 760px; width: 92vw; }
+  .ship-img { width: 64px; height: 48px; object-fit: contain;
+              image-rendering: pixelated; background: #0a1428; border-radius: 3px; }
+  .mate-card { display: flex; align-items: center; gap: 10px; text-align: left;
+               border-bottom: 1px solid #2a3444; padding: 6px 4px; }
+  .mate-card img { width: 49px; height: 61px; image-rendering: pixelated;
+                   border: 1px solid #8a6d3b; border-radius: 3px; background: #000; margin: 0; }
+  .mate-card .mate-stats { flex: 1; font-size: 13px; line-height: 1.5; }
+  #mates-cabins { display: flex; gap: 8px; justify-content: center; margin: 8px 0 4px;
+                  font-size: 13px; }
+  #mates-cabins .cabin { border: 1px solid #8a6d3b; border-radius: 6px;
+                         padding: 6px 10px; background: #141c30; }
 
   #battle-hud { position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
                 z-index: 6; display: none; text-align: center; color: #fff;
@@ -130,6 +141,21 @@
   <p id="shipyard-info"></p>
   <div id="shipyard-table" class="datatable"></div>
   <div class="close-hint"><span class="key">Esc</span> leave shipyard</div>
+</div>
+
+<div class="panel" id="outfit-panel">
+  <h2>Outfit Ship</h2>
+  <p id="outfit-info"></p>
+  <div id="outfit-table" class="datatable"></div>
+  <div class="close-hint"><span class="key">Esc</span> leave</div>
+</div>
+
+<div class="panel" id="mates-panel">
+  <h2>Mates &amp; Cabins</h2>
+  <p id="mates-info"></p>
+  <div id="mates-cabins"></div>
+  <div id="mates-table" class="datatable"></div>
+  <div class="close-hint"><span class="key">Esc</span> leave</div>
 </div>
 
 <div id="battle-hud">

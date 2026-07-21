@@ -140,16 +140,20 @@ with sync_playwright() as p:
     page.keyboard.press("Escape"); page.wait_for_timeout(200)
     page.keyboard.press("Escape"); page.wait_for_timeout(300)
 
-    # --- dry_dock: repair + buy ship ---
+    # --- dry_dock: repair + buy ship (via shipyard) ---
     page.evaluate("window.UW.enterPort(1)")
     page.wait_for_timeout(1000)
-    page.evaluate("window.UW.P.hull = 50; window.UW.P.gold = 30000; window.UW.save()")
+    page.evaluate("window.UW.P.hull = 30; window.UW.P.gold = 30000; window.UW.save()")
     open_bld("dry_dock")
     click_btn("Repair hull")
-    check("hull repaired", page.evaluate("window.UW.P.hull") == 100)
-    click_btn("Buy Caravel")
-    check("bought Caravel", page.evaluate("window.UW.P.shipTier") == 1
-          and page.evaluate("window.UW.P.hull") == 150)
+    check("hull repaired", page.evaluate("window.UW.P.hull") == 60)   # Balsa hull
+    click_btn("Buy a new ship")
+    page.wait_for_timeout(400)
+    page.click("#shipyard-table tr:has-text('Sloop') button:has-text('buy')")
+    page.wait_for_timeout(300)
+    check("bought Sloop via shipyard", page.evaluate("window.UW.P.ship") == "Sloop"
+          and page.evaluate("window.UW.P.hull") == 100)
+    page.keyboard.press("Escape"); page.wait_for_timeout(200)
     page.keyboard.press("Escape"); page.wait_for_timeout(200)
 
     # --- item_shop: telescope ---
@@ -172,8 +176,8 @@ with sync_playwright() as p:
     # --- save persistence ---
     page.reload()
     page.wait_for_timeout(2500)
-    check("save persists (Caravel, telescope)",
-          page.evaluate("window.UW.P.shipTier") == 1 and page.evaluate("window.UW.P.telescope") == True)
+    check("save persists (Sloop, telescope)",
+          page.evaluate("window.UW.P.ship") == "Sloop" and page.evaluate("window.UW.P.telescope") == True)
 
     page.screenshot(path="bld_market.png") if False else None
     print("ERRORS:", errors if errors else "none")

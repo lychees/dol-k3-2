@@ -134,7 +134,9 @@ print('goods.json:', len(goods), 'regions,', len(specialties), 'specialties')
 # --- 9. ships + battle sounds ------------------------------------------------
 from hashes.hash_ship_name_to_attributes import hash_ship_name_to_attributes
 ships = {name: {'durability': a['durability'], 'power': a['power'],
-                'capacity': a['capacity'], 'guns': a['max_guns'], 'price': a['price']}
+                'capacity': a['capacity'], 'guns': a['max_guns'],
+                'min_crew': a['min_crew'], 'max_crew': a['max_crew'],
+                'price': a['price']}
          for name, a in hash_ship_name_to_attributes.items()}
 with open(f'{OUT}/ships.json', 'w') as f:
     json.dump(ships, f)
@@ -142,4 +144,28 @@ print('ships.json:', len(ships), 'ships')
 for m in ['shoot.ogg', 'explosion.ogg', 'engage.ogg']:
     shutil.copy(f'{UW}/assets/sounds/effect/{m}', f'{OUT}/sounds/{m}')
 print('battle sounds copied')
+
+# --- 10. mates + ship images + figures ---------------------------------------
+from hashes.hash_mates import hash_mates
+mates = {int(k): {'name': v['name'], 'nation': v['nation'], 'lv': v['lv'],
+                  'leadership': v['leadership'], 'seamanship': v['seamanship'],
+                  'knowledge': v['knowledge'], 'intuition': v['intuition'],
+                  'courage': v['courage'], 'swordplay': v['swordplay'],
+                  'luck': v['luck'], 'accounting': v['accounting'],
+                  'gunnery': v['gunnery'], 'navigation': v['navigation'],
+                  'image': v['image_x'] and [v['image_x'], v['image_y']] or None}
+         for k, v in hash_mates.items()}
+with open(f'{OUT}/mates.json', 'w') as f:
+    json.dump(mates, f)
+print('mates.json:', len(mates), 'mates')
+
+os.makedirs(f'{OUT}/ships', exist_ok=True)
+for name in ships:
+    src = f"{UW}/assets/images/ships/{name.lower()}.png"
+    if os.path.exists(src):
+        shutil.copy(src, f'{OUT}/ships/{name.lower()}.png')
+    else:
+        print('missing ship image:', name)
+shutil.copy(f'{UW}/assets/images/figures/figures.png', f'{OUT}/figures.png')
+print('ship images + figures copied')
 print('DONE')
