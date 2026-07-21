@@ -254,6 +254,14 @@ the uw2ol project, which took them from the original Uncharted Waters 2
   gold.
 - **Discoveries by foot**: walking within 1.5 tiles of a site triggers
   the discovery — inland sites now genuinely require an expedition.
+### 15. 港口 NPC 对话
+- Walk up to any port NPC and press E to talk (hint shows "talk to …"):
+  sailors ("Have you been to X?"), townswomen ("Do you like this place?
+  …How about me?"), the dog ("Woof!"), the old man (his classic line +
+  free discovery coordinates), the market agent (names the port's
+  specialty AND the region that pays most for it, excluding home),
+  the palace guard (reacts to your title). Wanderers pause while you
+  chat. Dialog lines from uw2ol's role.py.
 ## Key file formats (cheat sheet)
 
 | Data | Format |

@@ -315,12 +315,86 @@ async function enterPort(pid) {
 function setSail() {
   scene = 'sea';
   inBuilding = null;
+  closeDialog();
   hideBuildingPanel();
   camDist = 34;
   const name = ports.find(p => p.id === portId)?.name ?? '';
   showBanner(`Set sail from ${name}`);
   playSfx('./assets/sounds/wave.ogg');
   playMusic(seaMusicFor(portId));
+}
+
+// ---------------------------------------------------------------------------
+// Talk to NPCs (E): uw2ol's dialog lines + useful tips
+// ---------------------------------------------------------------------------
+const dialogPanel = document.getElementById('dialog-panel');
+let dialogOpen = false;
+
+function showDialog(name, text) {
+  dialogOpen = true;
+  document.getElementById('dialog-name').textContent = name;
+  document.getElementById('dialog-text').innerHTML = text;
+  dialogPanel.style.display = 'block';
+}
+function closeDialog() {
+  if (!dialogOpen) return;
+  dialogOpen = false;
+  dialogPanel.style.display = 'none';
+}
+
+function npcDialog(npc) {
+  const kind = npc.kind;
+  if (kind === 'man') {
+    const p = ports[Math.floor(Math.random() * ports.length)];
+    showDialog('Sailor', `"Have you been to <b>${p.name}</b>?"`);
+  } else if (kind === 'woman') {
+    showDialog('Townswoman', '"Do you like this place? ... How about me?"');
+  } else if (kind === 'dog') {
+    showDialog('Dog', 'Woof! Woof!');
+  } else if (kind === 'oldman') {
+    const unknown = villages.filter(v => !discoveriesFound.has(v.id));
+    if (unknown.length && Math.random() < 0.6) {
+      const v = unknown[Math.floor(Math.random() * unknown.length)];
+      showDialog('Old man', `"Cherish your time, kid. I was like you many years ago…<br>` +
+        `Say — they say there's something strange at <b>${fmtLonLat(v.x, v.y)}</b>."`);
+    } else {
+      showDialog('Old man', '"Cherish your time, kid. I was like you many years ago."');
+    }
+  } else if (kind === 'agent') {
+    const spec = goodsData.specialties[portId];
+    if (spec) {
+      // find the region paying the most for the local specialty (excluding home)
+      const home = portMeta[Math.min(portId, 101)].region;
+      let best = null, bestPrice = 0;
+      for (const [region, table] of Object.entries(goodsData.regions)) {
+        if (region === home) continue;
+        const price = table.prices[spec.name]?.[1] ?? 0;
+        if (price > bestPrice) { bestPrice = price; best = region; }
+      }
+      showDialog('Agent', `"Here! We have everything you can imagine!<br>` +
+        `Our specialty is <b>${spec.name}</b> (buy: ${spec.price}g). ` +
+        (best ? `They pay much more for it in <b>${best}</b>."` : '"'));
+    } else {
+      showDialog('Agent', '"Here! We have everything you can imagine!"');
+    }
+  } else if (kind === 'guard') {
+    showDialog('Guard', P.fame >= 5
+      ? `"Good day, ${fameTitle()}. The governor speaks well of you."`
+      : '"Halt! State your business. …Move along, sailor."');
+  }
+}
+
+function nearestNpc() {
+  let best = null, bestD = 1.8;
+  for (const n of npcs) {
+    const d = Math.hypot(n.pos.x - personPos.x, n.pos.z - personPos.z);
+    if (d < bestD) { best = n; bestD = d; }
+  }
+  for (const s of staticNpcs) {
+    const d = Math.hypot(s.mesh.position.x - personPos.x, s.mesh.position.z - personPos.z);
+    if (d < bestD) { best = s; bestD = d; }
+  }
+  return best;
 }
 
 // ---------------------------------------------------------------------------
@@ -346,10 +420,10 @@ const NPC_FRAMES = {
   woman: { up: 8,  right: 10, down: 12, left: 14 },
 };
 const STATIC_NPCS = [
-  { building: 2, frames: [28, 29] },   // dog at the bar
-  { building: 5, frames: [26, 27] },   // old man at the inn
-  { building: 1, frames: [24, 25] },   // agent at the market
-  { building: 6, frames: [30, 31] },   // guard at the palace
+  { building: 2, frames: [28, 29], kind: 'dog', label: 'dog' },        // dog at the bar
+  { building: 5, frames: [26, 27], kind: 'oldman', label: 'old man' }, // old man at the inn
+  { building: 1, frames: [24, 25], kind: 'agent', label: 'agent' },    // agent at the market
+  { building: 6, frames: [30, 31], kind: 'guard', label: 'guard' },    // guard at the palace
 ];
 
 function spawnPortNpcs() {
@@ -382,7 +456,8 @@ function spawnPortNpcs() {
     const mesh = makeNpcMesh(s.frames[0]);
     mesh.position.set(b.x + 0.5, 0.4, b.y + 1.5);
     portScene.add(mesh);
-    staticNpcs.push({ mesh, frames: s.frames, animT: Math.random() * 0.6, cur: 0 });
+    staticNpcs.push({ mesh, frames: s.frames, kind: s.kind, label: s.label,
+                      animT: Math.random() * 0.6, cur: 0 });
   }
 }
 
@@ -390,7 +465,7 @@ function updateNpcs(dt, phase) {
   const visible = phase !== 'night';   // uw2ol: no npcs out at night
   for (const n of npcs) {
     n.mesh.visible = visible;
-    if (!visible) continue;
+    if (!visible || dialogOpen) continue;   // wanderers pause while you chat
     n.animT += dt;
     n.moveT -= dt;
     if (n.moveT <= 0) {
@@ -2040,6 +2115,11 @@ function nearestPort() {
 function onUseKey() {
   if (!started) return;
   if (discoveryPanel.style.display === 'block') { discoveryPanel.style.display = 'none'; return; }
+  if (dialogOpen) { closeDialog(); return; }
+  if (scene === 'port' && !inBuilding) {
+    const npc = nearestNpc();
+    if (npc) { npcDialog(npc); return; }
+  }
   if (marketOpen) { closeMarket(); return; }
   if (shipyardOpen) { closeShipyard(); return; }
   if (matesOpen) { closeMates(); return; }
@@ -2063,6 +2143,7 @@ function onAshoreKey() {
 
 function onEscapeKey() {
   if (discoveryPanel.style.display === 'block') { discoveryPanel.style.display = 'none'; return; }
+  if (dialogOpen) { closeDialog(); return; }
   if (menuOpen) { closeMenu(); return; }
   if (devOpen) { toggleDev(); return; }
   if (marketOpen) { closeMarket(); return; }
@@ -2237,6 +2318,7 @@ window.UW = {
                                ex: battle.enemy.pos.x, ez: battle.enemy.pos.z },
   getPirates: () => pirates.length,
   getNpcs: () => ({ wanderers: npcs.length, static: staticNpcs.length }),
+  nearestNpc, npcDialog,
   getNpcDebug: () => ({
     w: npcs.map(n => ({ x: n.pos.x, z: n.pos.z, col: NPC_FRAMES[n.kind][n.dir] + n.frame,
                         visible: n.mesh.visible })),
@@ -2321,7 +2403,7 @@ function tick() {
 
   // --- movement input ---
   let dx = 0, dz = 0;
-  const panelOpen = discoveryPanel.style.display === 'block' || inBuilding || marketOpen || shipyardOpen || matesOpen || outfitOpen || menuOpen || devOpen || !!landBattle;
+  const panelOpen = discoveryPanel.style.display === 'block' || inBuilding || marketOpen || shipyardOpen || matesOpen || outfitOpen || menuOpen || devOpen || !!landBattle || dialogOpen;
   if (started && !panelOpen) {
     if (keys['w'] || keys['arrowup']) dz -= 1;
     if (keys['s'] || keys['arrowdown']) dz += 1;
@@ -2407,10 +2489,20 @@ function tick() {
       const d = Math.hypot(b.x + 0.5 - personPos.x, b.y + 0.5 - personPos.z);
       if (d < bestD) { bestD = d; buildingNear = b; }
     }
-    if (!inBuilding) {
-      showHint(buildingNear
-        ? `<span class="key">E</span> enter ${buildingNear.name.replace(/_/g, ' ')}`
-        : null);
+    if (!inBuilding && !dialogOpen) {
+      const npc = nearestNpc();
+      const bld = buildingNear
+        ? { d: Math.hypot(buildingNear.x + 0.5 - personPos.x, buildingNear.y + 0.5 - personPos.z) }
+        : null;
+      const npcD = npc ? Math.hypot((npc.pos ?? npc.mesh.position).x - personPos.x,
+                                    (npc.pos ?? npc.mesh.position).z - personPos.z) : 99;
+      if (npc && (!bld || npcD <= bld.d)) {
+        showHint(`<span class="key">E</span> talk to ${npc.label ?? 'sailor'}`);
+      } else {
+        showHint(buildingNear
+          ? `<span class="key">E</span> enter ${buildingNear.name.replace(/_/g, ' ')}`
+          : null);
+      }
     } else {
       showHint(null);
     }
