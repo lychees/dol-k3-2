@@ -33,7 +33,8 @@ with open(f'{OUT}/portmaps.bin', 'wb') as out:
         out.write(data)
 print('portmaps.bin written')
 
-# --- 3. port meta: tileset + buildings per port ----------------------------
+# --- 3. port meta: tileset + buildings + region per port -------------------
+MARKETS = hash_ports_meta_data['markets']
 meta = {}
 for pid, p in hash_ports_meta_data.items():
     if not isinstance(p, dict) or 'buildings' not in p:
@@ -41,6 +42,7 @@ for pid, p in hash_ports_meta_data.items():
     meta[pid] = {
         'name': p['name'],
         'tileset': p['tileset'],
+        'region': MARKETS[p['economyId']] if 'economyId' in p else None,
         'buildings': {int(k): [v['x'], v['y']] for k, v in p['buildings'].items()},
     }
 with open(f'{OUT}/port_meta.json', 'w') as f:
@@ -75,19 +77,37 @@ for name in set(id_2_building_type.values()):
         print('missing building image:', name)
 print('images copied')
 
-# --- 7. music: a few port themes + building themes --------------------------
+# --- 7. music: all regional port/sea themes + building themes + effects ----
 os.makedirs(f'{OUT}/music/port', exist_ok=True)
+os.makedirs(f'{OUT}/music/sea', exist_ok=True)
 os.makedirs(f'{OUT}/music/building', exist_ok=True)
-for m in ['Lisbon.mp3', 'London.mp3', 'Seville.mp3', 'Venice.mp3',
-          'Northern Europe Town.mp3', 'Southern Europe Town.mp3',
-          'Middle Eastern Town.mp3', 'African Town.mp3', 'China Town.mp3',
-          'Japan Town.mp3', 'Indian Town.mp3', 'Central America Town.mp3',
-          'South America Town.mp3', 'Oceania Town.mp3', 'Amsterdam.mp3',
-          'Marseille.mp3']:
+os.makedirs(f'{OUT}/sounds', exist_ok=True)
+PORT_MUSIC = ['Lisbon.mp3', 'Seville.mp3', 'London.mp3', 'Marseille.mp3',
+              'Amsterdam.mp3', 'Venice.mp3', 'African Town.mp3',
+              'Middle Eastern Town.mp3', 'Northern Europe Town.mp3',
+              'Southern Europe Town.mp3', 'Central America Town.mp3',
+              'South America Town.mp3', 'Indian Town.mp3', 'China Town.mp3',
+              'Japan Town.mp3', 'Oceania Town.mp3', 'Southeast Asian Town.ogg']
+for m in PORT_MUSIC:
     src = f'{UW}/assets/sounds/music/port/{m}'
     if os.path.exists(src):
         shutil.copy(src, f'{OUT}/music/port/{m}')
+    else:
+        print('missing port music:', m)
+SEA_MUSIC = ['African Sea.mp3', 'American Sea.mp3', 'Atlantic Ocean.mp3',
+             'East Asia Sea.mp3', 'Indian Ocean.mp3', 'Mediterranean.mp3',
+             'North Sea.mp3', 'Pacific.mp3', 'Southeast Asian Sea.ogg']
+for m in SEA_MUSIC:
+    src = f'{UW}/assets/sounds/music/sea/{m}'
+    if os.path.exists(src):
+        shutil.copy(src, f'{OUT}/music/sea/{m}')
+    else:
+        print('missing sea music:', m)
+for m in ['sea.ogg', 'sea_1.ogg', 'port.ogg']:
+    shutil.copy(f'{UW}/assets/sounds/music/{m}', f'{OUT}/music/{m}')
 for m in ['bar.mp3', 'church.mp3', 'palace.mp3']:
     shutil.copy(f'{UW}/assets/sounds/music/building/{m}', f'{OUT}/music/building/{m}')
+shutil.copy(f'{UW}/assets/sounds/effect/discover.ogg', f'{OUT}/sounds/discover.ogg')
+shutil.copy(f'{UW}/assets/sounds/effect/wave.ogg', f'{OUT}/sounds/wave.ogg')
 print('music copied')
 print('DONE')

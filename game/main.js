@@ -166,7 +166,6 @@ const ship = new THREE.Mesh(
   new THREE.MeshBasicMaterial({ map: shipMap, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide }),
 );
 ship.rotation.x = -Math.PI / 2;
-ship.rotation.z = Math.PI;            // sprite 'up' should face -z (north)
 seaScene.add(ship);
 
 const DIRECTION_COL = { up: 0, right: 2, down: 4, left: 6,
@@ -224,7 +223,6 @@ const person = new THREE.Mesh(
   new THREE.MeshBasicMaterial({ map: personMap, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide }),
 );
 person.rotation.x = -Math.PI / 2;
-person.rotation.z = Math.PI;
 portScene.add(person);
 
 const personPos = new THREE.Vector3(48, 0.4, 48);
@@ -301,7 +299,7 @@ async function enterPort(pid) {
   camDist = 20;
   const name = ports.find(p => p.id === pid)?.name ?? meta.name;
   showBanner(`${name}<small>press Esc at any time to set sail</small>`);
-  playMusic(`./assets/music/port/Lisbon.mp3`);
+  playMusic(portMusicFor(pid));
   buildPortMinimap();
 }
 
@@ -312,7 +310,8 @@ function setSail() {
   camDist = 34;
   const name = ports.find(p => p.id === portId)?.name ?? '';
   showBanner(`Set sail from ${name}`);
-  playMusic(`./assets/music/${playlist[trackIdx]}`);
+  playSfx('./assets/sounds/wave.ogg');
+  playMusic(seaMusicFor(portId));
 }
 
 // ---------------------------------------------------------------------------
@@ -351,7 +350,7 @@ function openBuilding(b) {
 function hideBuildingPanel() {
   buildingPanel.style.display = 'none';
   if (inBuilding && ['bar', 'church', 'palace'].includes(inBuilding.name)) {
-    playMusic('./assets/music/port/Lisbon.mp3');
+    playMusic(portMusicFor(portId));
   }
   inBuilding = null;
 }
@@ -375,6 +374,7 @@ function nearestVillage() {
 
 function goAshore(v) {
   discoveriesFound.add(v.id);
+  playSfx('./assets/sounds/discover.ogg');
   document.getElementById('discovery-name').textContent = v.name;
   document.getElementById('discovery-text').textContent = v.desc;
   // crop 49px cell from the discoveries sheet (16 cols x 8 rows)
@@ -516,21 +516,61 @@ function onEscapeKey() {
 }
 
 // ---------------------------------------------------------------------------
-// Music
+// Music (region-based, following uw2ol's mapping in gui.py)
 // ---------------------------------------------------------------------------
-const playlist = ['Mediterranean.mp3', 'Atlantic Ocean.mp3', 'North Sea.mp3'];
-let trackIdx = 0;
+const PORTS_WITH_OWN_THEME = ['Lisbon', 'Seville', 'London', 'Marseille', 'Amsterdam', 'Venice'];
+const PORT_MUSIC_BY_REGION = {
+  'North Africa': 'African Town.mp3', 'East Africa': 'African Town.mp3', 'West Africa': 'African Town.mp3',
+  'Middle East': 'Middle Eastern Town.mp3', 'Ottoman Empire': 'Middle Eastern Town.mp3',
+  'Northern Europe': 'Northern Europe Town.mp3',
+  'The Mediterranean': 'Southern Europe Town.mp3', 'Iberia': 'Southern Europe Town.mp3',
+  'Central America': 'Central America Town.mp3', 'South America': 'South America Town.mp3',
+  'India': 'Indian Town.mp3',
+  'Southeast Asia': 'Southeast Asian Town.ogg',
+};
+const SEA_MUSIC_BY_REGION = {
+  'East Africa': 'African Sea.mp3', 'West Africa': 'African Sea.mp3',
+  'Middle East': 'Mediterranean.mp3', 'Ottoman Empire': 'Mediterranean.mp3',
+  'Northern Europe': 'North Sea.mp3',
+  'The Mediterranean': 'Mediterranean.mp3', 'Iberia': 'Mediterranean.mp3', 'North Africa': 'Mediterranean.mp3',
+  'Central America': 'American Sea.mp3', 'South America': 'American Sea.mp3',
+  'India': 'Indian Ocean.mp3',
+  'Southeast Asia': 'Southeast Asian Sea.ogg',
+  'Far East': 'East Asia Sea.mp3',
+};
+
+function portMusicFor(pid) {
+  const meta = portMeta[Math.min(pid, 101)];
+  const name = ports.find(p => p.id === pid)?.name ?? meta.name;
+  if (PORTS_WITH_OWN_THEME.includes(name)) return `./assets/music/port/${name}.mp3`;
+  const r = pid <= 101 ? meta.region : null;      // supply ports have no economy
+  if (r && PORT_MUSIC_BY_REGION[r]) return `./assets/music/port/${PORT_MUSIC_BY_REGION[r]}`;
+  if ([95, 96, 98].includes(pid)) return './assets/music/port/China Town.mp3';
+  if ([99, 100].includes(pid)) return './assets/music/port/Japan Town.mp3';
+  if (pid === 120) return './assets/music/port/Oceania Town.mp3';
+  return './assets/music/port.ogg';
+}
+
+function seaMusicFor(pid) {
+  const r = pid <= 101 ? portMeta[pid]?.region : null;
+  if (r && SEA_MUSIC_BY_REGION[r]) return `./assets/music/sea/${SEA_MUSIC_BY_REGION[r]}`;
+  return Math.random() < 0.5 ? './assets/music/sea.ogg' : './assets/music/sea_1.ogg';
+}
+
 const audio = new Audio();
 audio.volume = 0.5;
-audio.addEventListener('ended', () => {
-  if (scene !== 'sea') return;
-  trackIdx = (trackIdx + 1) % playlist.length;
-  playMusic(`./assets/music/${playlist[trackIdx]}`);
-});
+audio.loop = true;
+const sfx = new Audio();
 let musicOn = true;
 function playMusic(src) {
+  if (audio.dataset.cur === src) return;
+  audio.dataset.cur = src;
   audio.src = src;
   if (musicOn) audio.play().catch(() => {});
+}
+function playSfx(src) {
+  sfx.src = src;
+  sfx.play().catch(() => {});
 }
 function toggleMusic() {
   musicOn = !musicOn;
@@ -587,12 +627,14 @@ window.UW = {
   getDiscovered: () => [...discoveriesFound],
   teleport: (x, z) => { shipPos.x = x; shipPos.z = z; },
   walkTo: (x, z) => { personPos.x = x; personPos.z = z; },
+  getMusic: () => audio.dataset.cur,
+  getSfx: () => sfx.src,
 };
 
 document.getElementById('start-overlay').addEventListener('click', function () {
   this.style.display = 'none';
   started = true;
-  playMusic(`./assets/music/${playlist[trackIdx]}`);
+  playMusic(seaMusicFor(1));   // Lisbon -> Mediterranean
   showBanner('Lisbon, Portugal<small>February 1522 — your voyage begins</small>');
 }, { once: true });
 

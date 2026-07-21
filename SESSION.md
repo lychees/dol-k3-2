@@ -86,6 +86,21 @@ Uncharted Waters 2 as an MMO, written in Python/pygame/twisted).
 - Verified on real GPU (RTX 4090) + SwiftShader: Lisbon/Istanbul ports match
   the PIL ground-truth render; full regression test passed.
 
+### 6. 区域 BGM + 发现音效 + 方向修复
+- **Regional BGM** (uw2ol's mapping from gui.py): exported `region` per port
+  (economyId → markets list). Port music: 6 capital themes (Lisbon/Seville/
+  London/Marseille/Amsterdam/Venice), region themes (African/Middle Eastern/
+  Northern Europe/Southern Europe/Central & South America/Indian/Southeast
+  Asian Town), China/Japan/Oceania Town by port id, port.ogg fallback.
+  Sea music on set sail by the port's region (African Sea/Mediterranean/
+  North Sea/American Sea/Indian Ocean/Southeast Asian Sea/East Asia Sea,
+  sea.ogg/sea_1.ogg fallback). BGM loops; ~190MB of music added.
+- **Discovery sfx**: discover.ogg on going ashore, wave.ogg on set sail
+  (separate Audio element so BGM keeps playing).
+- **Direction fix**: removed `rotation.z = Math.PI` from ship/person meshes —
+  the 180° roll made sprites face the opposite way (up/down swapped).
+  Verified all 4 directions against the sprite sheet.
+
 ## Key file formats (cheat sheet)
 
 | Data | Format |
