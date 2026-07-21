@@ -426,6 +426,247 @@ function updateNpcs(dt, phase) {
 }
 
 // ---------------------------------------------------------------------------
+// Land exploration (L): walk ashore, Dragon-Quest style expeditions
+// ---------------------------------------------------------------------------
+const landPersonMap = personTex.clone();
+landPersonMap.needsUpdate = true;
+landPersonMap.repeat.set(1 / 32, 1);
+const landPerson = new THREE.Mesh(
+  new THREE.PlaneGeometry(2, 2),
+  new THREE.MeshBasicMaterial({ map: landPersonMap, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide }));
+landPerson.rotation.x = -Math.PI / 2;
+landPerson.visible = false;
+seaScene.add(landPerson);
+
+const landPos = new THREE.Vector3(0, 0.4, 0);
+let landDir = 'down';
+
+function updateLandPersonSprite() {
+  const col = DIRECTION_COL[landDir] + animFrame;
+  landPersonMap.offset.set((CHARACTER_BLOCK[P.character] + col) / 32, 0);
+}
+
+const LAND_MONSTERS = [
+  { name: 'Prairie Dog', img: [3, 5], hp: 8,  atk: 3,  def: 0, exp: 4,  gold: 5 },
+  { name: 'Tree Snake',  img: [1, 4], hp: 12, atk: 5,  def: 0, exp: 7,  gold: 8 },
+  { name: 'Python',      img: [16, 3], hp: 18, atk: 7, def: 1, exp: 12, gold: 12 },
+  { name: 'Bison',       img: [4, 1], hp: 26, atk: 8, def: 2, exp: 16, gold: 10 },
+  { name: 'Panda',       img: [5, 1], hp: 30, atk: 10, def: 3, exp: 22, gold: 20 },
+  { name: 'Crocodile',   img: [9, 5], hp: 38, atk: 12, def: 3, exp: 30, gold: 25 },
+  { name: 'Saber-toothed Tiger', img: [2, 2], hp: 50, atk: 15, def: 4, exp: 45, gold: 40 },
+  { name: 'Blue Whale',  img: [9, 1], hp: 80, atk: 18, def: 6, exp: 80, gold: 100 },
+];
+let landBattle = null;    // {enemy, log[], round}
+let encounterT = 2;       // seconds of walking before next possible encounter
+
+const heroMaxHp = () => 20 + 8 * P.hero.lv;
+const heroAtk = () => 4 + 2 * P.hero.lv + [0, 4, 8, 14][P.hero.weapon];
+const heroDef = () => Math.floor(P.hero.lv / 2) + [0, 2, 5, 9][P.hero.armor];
+const mateMaxHp = id => 15 + 5 * (matesData[id]?.lv ?? 1);
+const mateAtk = id => 3 + (matesData[id]?.lv ?? 1) + Math.floor((matesData[id]?.swordplay ?? 0) / 20);
+const mateDef = id => Math.floor((matesData[id]?.lv ?? 1) / 3);
+const mateHpOf = id => P.mateHp[id] ?? mateMaxHp(id);
+
+function landAt(x, z) {   // walkable for a person: land tiles (not sailable water)
+  const c = Math.floor(x), r = Math.floor(z);
+  if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return false;
+  return !SAILABLE.has(tileAt(c, r));
+}
+
+function landOn() {
+  // find an adjacent land tile to step onto
+  for (const [ox, oz] of [[0, -1], [0, 1], [-1, 0], [1, 0], [-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    const x = Math.floor(shipPos.x) + ox + 0.5, z = Math.floor(shipPos.z) + oz + 0.5;
+    if (landAt(x, z)) {
+      landPos.set(x, 0.4, z);
+      scene = 'land';
+      camDist = 16;
+      landDir = 'down';
+      landPerson.visible = true;
+      landPerson.position.copy(landPos);
+      updateLandPersonSprite();
+      endBattle();   // pirates can't follow you ashore
+      showBanner('Gone ashore<small>explore on foot — beware of wild beasts! Return to your ship and press L to re-board</small>');
+      return true;
+    }
+  }
+  showBanner('No place to land here');
+  return false;
+}
+
+function reboard() {
+  if (Math.hypot(landPos.x - shipPos.x, landPos.z - shipPos.z) > 2.5) {
+    showBanner('Your ship is too far — walk back to it');
+    return;
+  }
+  scene = 'sea';
+  camDist = 34;
+  landPerson.visible = false;
+  showBanner('Back aboard');
+}
+
+// ---------------------------------------------------------------------------
+// Dragon-Quest style turn-based land battles
+// ---------------------------------------------------------------------------
+function startLandBattle() {
+  // enemy tier scales with hero level
+  const tier = Math.max(0, Math.min(LAND_MONSTERS.length - 1,
+                 P.hero.lv - 1 + Math.floor(Math.random() * 3) - 1));
+  const base = LAND_MONSTERS[tier];
+  const lvScale = 1 + (P.hero.lv - 1) * 0.25;
+  const enemy = {
+    name: base.name, img: base.img,
+    hp: Math.round(base.hp * lvScale), maxHp: Math.round(base.hp * lvScale),
+    atk: Math.round(base.atk * lvScale), def: base.def,
+    exp: Math.round(base.exp * lvScale), gold: Math.round(base.gold * lvScale),
+  };
+  landBattle = { enemy, log: [`A wild ${enemy.name} appears!`] };
+  playMusic('./assets/music/battle.ogg');
+  renderLandBattle();
+}
+
+function partyMembers() {
+  const members = [{ kind: 'hero', name: CHARACTER_NAMES[P.character],
+                     hp: P.hero.hp, maxHp: heroMaxHp(), atk: heroAtk(), def: heroDef() }];
+  for (const id of P.mates.slice(0, 3)) {
+    members.push({ kind: 'mate', id, name: matesData[id].name,
+                   hp: mateHpOf(id), maxHp: mateMaxHp(id), atk: mateAtk(id), def: mateDef(id) });
+  }
+  return members;
+}
+
+function landBattleTurn(action) {
+  const bt = landBattle;
+  if (!bt || bt.over) return;
+  const e = bt.enemy;
+  const members = partyMembers().filter(m => m.hp > 0);
+  if (!members.length) return;
+
+  if (action === 'run') {
+    if (Math.random() < 0.65) {
+      bt.log.push('Got away safely!');
+      endLandBattle(false);
+      return;
+    }
+    bt.log.push("Can't escape!");
+  } else if (action === 'balm') {
+    if (P.hero.balms <= 0) { bt.log.push('No balms left!'); renderLandBattle(); return; }
+    P.hero.balms--;
+    const target = members.reduce((a, b) => (a.hp / a.maxHp < b.hp / b.maxHp ? a : b));
+    const heal = 30;
+    applyMemberHeal(target, heal);
+    bt.log.push(`Used a balm — ${target.name} recovers ${heal} HP.`);
+  } else {
+    // everyone attacks
+    for (const m of members) {
+      const dmg = Math.max(1, Math.round(m.atk * (0.85 + Math.random() * 0.3) - e.def / 2));
+      e.hp -= dmg;
+      bt.log.push(`${m.name} hits ${e.name} for ${dmg}!`);
+      if (e.hp <= 0) break;
+    }
+  }
+
+  if (e.hp <= 0) {
+    bt.log.push(`${e.name} defeated! Gained ${e.exp} exp and ${e.gold}g.`);
+    endLandBattle(true);
+    return;
+  }
+
+  // enemy strikes back at a random alive member
+  const alive = partyMembers().filter(m => m.hp > 0);
+  const t = alive[Math.floor(Math.random() * alive.length)];
+  const edmg = Math.max(1, Math.round(e.atk * (0.85 + Math.random() * 0.3) - t.def / 2));
+  applyMemberDamage(t, edmg);
+  bt.log.push(`${e.name} hits ${t.name} for ${edmg}!`);
+
+  if (partyMembers().every(m => m.hp <= 0)) {
+    bt.log.push('The party was wiped out…');
+    endLandBattle(null);   // defeat
+    return;
+  }
+  renderLandBattle();
+}
+
+function applyMemberDamage(m, dmg) {
+  if (m.kind === 'hero') P.hero.hp = Math.max(0, P.hero.hp - dmg);
+  else P.mateHp[m.id] = Math.max(0, mateHpOf(m.id) - dmg);
+}
+function applyMemberHeal(m, hp) {
+  if (m.kind === 'hero') P.hero.hp = Math.min(heroMaxHp(), P.hero.hp + hp);
+  else P.mateHp[m.id] = Math.min(mateMaxHp(m.id), mateHpOf(m.id) + hp);
+}
+
+function endLandBattle(won) {
+  const bt = landBattle;
+  if (won) {
+    P.gold += bt.enemy.gold;
+    P.hero.exp += bt.enemy.exp;
+    // level ups
+    while (P.hero.exp >= P.hero.lv * 20) {
+      P.hero.exp -= P.hero.lv * 20;
+      P.hero.lv++;
+      P.hero.hp = heroMaxHp();
+      bt.log.push(`Level up! ${CHARACTER_NAMES[P.character]} is now lv ${P.hero.lv}!`);
+    }
+    P.fame += 1;
+    bt.over = true;
+    save();
+    setTimeout(() => { closeLandBattle(); }, 1600);
+  } else if (won === null) {
+    // defeated: wake up back at the ship
+    bt.over = true;
+    P.gold = Math.floor(P.gold * 0.9);
+    P.hero.hp = 1;
+    for (const id of P.mates) P.mateHp[id] = 1;
+    save();
+    setTimeout(() => {
+      closeLandBattle();
+      landPos.set(shipPos.x, 0.4, shipPos.z);
+      reboard();
+      showBanner('You barely made it back to the ship…<small>lost 10% of your gold</small>');
+    }, 2000);
+  } else {
+    closeLandBattle();   // ran away
+  }
+  renderLandBattle();
+}
+
+const landBattlePanel = document.getElementById('land-battle');
+function renderLandBattle() {
+  if (!landBattle) { landBattlePanel.style.display = 'none'; return; }
+  const e = landBattle.enemy;
+  landBattlePanel.style.display = 'block';
+  document.getElementById('lb-enemy-name').textContent = `${e.name}`;
+  document.getElementById('lb-enemy-hp').style.width = `${Math.max(0, e.hp) / e.maxHp * 100}%`;
+  const cv = document.getElementById('lb-enemy-img');
+  const g = cv.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  g.clearRect(0, 0, cv.width, cv.height);
+  g.drawImage(discoveryImg, (e.img[0] - 1) * 49, (e.img[1] - 1) * 49, 49, 49, 0, 0, cv.width, cv.height);
+  // party
+  const pd = document.getElementById('lb-party');
+  pd.innerHTML = '';
+  for (const m of partyMembers()) {
+    const row = document.createElement('div');
+    row.className = 'lb-member';
+    row.innerHTML = `<span>${m.name}</span>` +
+      `<span class="bar"><i style="width:${Math.max(0, m.hp) / m.maxHp * 100}%"></i></span>` +
+      `<span>${Math.max(0, m.hp)}/${m.maxHp}</span>`;
+    pd.appendChild(row);
+  }
+  document.getElementById('lb-log').innerHTML = landBattle.log.slice(-8).map(l => `<div>${l}</div>`).join('');
+  document.getElementById('lb-log').scrollTop = 1e6;
+  document.getElementById('lb-balm-count').textContent = P.hero.balms;
+}
+
+function closeLandBattle() {
+  landBattle = null;
+  renderLandBattle();
+  playMusic(seaMusicFor(portId ?? 1));
+  encounterT = 4;   // brief peace after a fight
+}
+
+// ---------------------------------------------------------------------------
 // Player state (persisted to localStorage)
 // ---------------------------------------------------------------------------
 // 22 real ships from uw2ol's hash_ship_name_to_attributes, sorted by price
@@ -455,6 +696,8 @@ let P = {
             lookout: null, surgeon: null, boatswain: null },
   equipment: { sails: 0, cannons: 0, ram: false, figurehead: false, boarding: false, armor: false },
   character: 0,
+  hero: { lv: 1, exp: 0, hp: 28, weapon: 0, armor: 0, balms: 0 },
+  mateHp: {},                       // mate id -> current hp (land battles)
   telescope: false, discoveryQuest: null, deliveryQuest: null,
   palaceMilestone: 0, days: 0, discoveries: [], portsFound: [],
   devSpeed: null,                 // developer-mode ship speed override
@@ -606,8 +849,11 @@ function buildingMenu(b) {
     ];
     case 'inn': return [
       { label: 'Rest until morning', cost: 10, action() {
-        P.gold -= 10; P.fatigue = 0; onNewDay();
-        setBuildingText('You sleep soundly. Fatigue washed away — a new day begins.');
+        P.gold -= 10; P.fatigue = 0;
+        P.hero.hp = heroMaxHp();
+        for (const id of P.mates) P.mateHp[id] = mateMaxHp(id);
+        onNewDay();
+        setBuildingText('You sleep soundly. Fatigue and wounds washed away — a new day begins.');
       } },
     ];
     case 'bar': {
@@ -755,6 +1001,27 @@ function buildingMenu(b) {
       ];
     }
     case 'item_shop': return [
+      { label: 'Cutlass (+4 hero atk)', cost: 500, disabled: P.hero.weapon >= 1,
+        action() { P.gold -= 500; P.hero.weapon = 1;
+                   setBuildingText('A fine cutlass for your expeditions ashore. (+4 attack)'); } },
+      { label: 'Rapier (+8 hero atk)', cost: 2000, disabled: P.hero.weapon >= 2,
+        action() { P.gold -= 2000; P.hero.weapon = 2;
+                   setBuildingText('An elegant rapier. (+8 attack)'); } },
+      { label: 'Saber (+14 hero atk)', cost: 8000, disabled: P.hero.weapon >= 3,
+        action() { P.gold -= 8000; P.hero.weapon = 3;
+                   setBuildingText('A masterwork saber. (+14 attack)'); } },
+      { label: 'Leather armor (+2 hero def)', cost: 400, disabled: P.hero.armor >= 1,
+        action() { P.gold -= 400; P.hero.armor = 1;
+                   setBuildingText('Sturdy leather armor. (+2 defense)'); } },
+      { label: 'Chain mail (+5 hero def)', cost: 1500, disabled: P.hero.armor >= 2,
+        action() { P.gold -= 1500; P.hero.armor = 2;
+                   setBuildingText('Rings of steel. (+5 defense)'); } },
+      { label: 'Plate armor (+9 hero def)', cost: 6000, disabled: P.hero.armor >= 3,
+        action() { P.gold -= 6000; P.hero.armor = 3;
+                   setBuildingText('A knight\'s plate. (+9 defense)'); } },
+      { label: 'Balm (heal 30 HP in battle)', cost: 100,
+        action() { P.gold -= 100; P.hero.balms++;
+                   setBuildingText(`A fragrant healing balm. (you have ${P.hero.balms})`); } },
       { label: 'Telescope (spot discoveries from afar)', cost: 2000, disabled: P.telescope,
         action() { P.gold -= 2000; P.telescope = true;
                    setBuildingText('With the telescope you can spot interesting sites from much farther away.'); } },
@@ -1234,6 +1501,9 @@ const MENU_RENDER = {
     return `<p><b>${CHARACTER_NAMES[P.character]}</b>${fameTitle() ? ' · ' + fameTitle() : ''}</p>` +
       `<p>fame: ${P.fame} · gold: ${P.gold}g · bank: ${P.bank}g · days: ${P.days}</p>` +
       `<p>provisions: ${Math.floor(P.provisions)} · vigor: ${100 - Math.floor(P.fatigue)}</p>` +
+      `<h3 style="color:#ffd94d;margin:8px 0 2px">hero</h3>` +
+      `<p>lv ${P.hero.lv} · hp ${P.hero.hp}/${heroMaxHp()} · atk ${heroAtk()} · def ${heroDef()} · ` +
+      `weapon t${P.hero.weapon} · armor t${P.hero.armor} · balms ${P.hero.balms}</p>` +
       `<h3 style="color:#ffd94d;margin:8px 0 2px">personal items</h3>` +
       `<p>${P.telescope ? '★ Telescope — discovery sight x2' : 'no special items yet (try the item shop)'}</p>`;
   },
@@ -1698,11 +1968,12 @@ function buildPortMinimap() {
 
 function drawMinimap() {
   mmCtx.imageSmoothingEnabled = false;
-  if (scene === 'sea') {
+  if (scene !== 'port') {
     mmCtx.drawImage(mmBase, 0, 0);
+    const dotPos = scene === 'land' ? landPos : shipPos;
     mmCtx.fillStyle = '#ff4444';
     mmCtx.beginPath();
-    mmCtx.arc(shipPos.x / COLS * mm.width, shipPos.z / ROWS * mm.height, 2.5, 0, 7);
+    mmCtx.arc(dotPos.x / COLS * mm.width, dotPos.z / ROWS * mm.height, 2.5, 0, 7);
     mmCtx.fill();
     // pirates show as dark red dots
     mmCtx.fillStyle = '#b91c1c';
@@ -1737,6 +2008,12 @@ addEventListener('keydown', e => {
   if (k === ' ') fireCannon();
   if (k === 'b') tryBoard();
   if (k === 'i') toggleMenu();
+  if (k === 'l') {
+    if (!started || inBuilding || marketOpen || shipyardOpen || matesOpen || outfitOpen || menuOpen || devOpen) return;
+    if (landBattle) return;
+    if (scene === 'sea') landOn();
+    else if (scene === 'land') reboard();
+  }
   if (k === 'escape') onEscapeKey();
   if (['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
 });
@@ -1975,6 +2252,9 @@ window.UW = {
   },
   hurtEnemy: n => { if (battle) battle.enemy.hull -= n; },
   setNoAutoSpawn: v => { noAutoSpawn = v; },
+  landOn, reboard, startLandBattle, landBattleTurn,
+  getScene2: () => scene,
+  getLandBattle: () => landBattle && { name: landBattle.enemy.name, hp: landBattle.enemy.hp },
   hurtEnemyCrew: n => { if (battle) battle.enemy.crew -= n; },
   getEnemyCrew: () => battle?.enemy.crew,
   reset: () => { localStorage.removeItem(SAVE_KEY); location.reload(); },
@@ -2001,6 +2281,10 @@ window.UW = {
   });
   document.getElementById('char-name').textContent = CHARACTER_NAMES[P.character];
 }
+
+document.getElementById('lb-attack').onclick = () => landBattleTurn('attack');
+document.getElementById('lb-balm').onclick = () => landBattleTurn('balm');
+document.getElementById('lb-run').onclick = () => landBattleTurn('run');
 
 document.getElementById('start-overlay').addEventListener('click', function (e) {
   if (e.target.closest('#char-select') || started) return;   // picking a hero / already started
@@ -2037,7 +2321,7 @@ function tick() {
 
   // --- movement input ---
   let dx = 0, dz = 0;
-  const panelOpen = discoveryPanel.style.display === 'block' || inBuilding || marketOpen || shipyardOpen || matesOpen || outfitOpen || menuOpen || devOpen;
+  const panelOpen = discoveryPanel.style.display === 'block' || inBuilding || marketOpen || shipyardOpen || matesOpen || outfitOpen || menuOpen || devOpen || !!landBattle;
   if (started && !panelOpen) {
     if (keys['w'] || keys['arrowup']) dz -= 1;
     if (keys['s'] || keys['arrowdown']) dz += 1;
@@ -2091,7 +2375,7 @@ function tick() {
       `<b>${fmtLonLat(shipPos.x, shipPos.z)}</b> · day ${P.days}<br>` +
       `time: ${a} · speed: ${moving ? (curSpeed * 1.8).toFixed(1) : '0.0'} kn<br>` +
       `gold: ${P.gold}g · food: ${P.provisions} · vigor: ${100 - P.fatigue} · hull: ${Math.ceil(flag().hull)} · crew: ${P.crew}`;
-  } else {
+  } else if (scene === 'port') {
     // --- walk in port ---
     if (moving) {
       const step = WALK_SPEED * dt;
@@ -2139,6 +2423,52 @@ function tick() {
       `fame: ${P.fame}${fameTitle() ? ' · ' + fameTitle() : ''} · ${curShip().name}${P.fleet.length > 1 ? ' +' + (P.fleet.length - 1) : ''}`;
   }
 
+  else {
+    // --- walk on land (Dragon-Quest expeditions) ---
+    if (moving && !landBattle) {
+      const step = WALK_SPEED * dt;
+      const nx = landPos.x + dx * step, nz = landPos.z + dz * step;
+      if (landAt(nx, nz)) { landPos.x = nx; landPos.z = nz; }
+      else if (landAt(nx, landPos.z)) landPos.x = nx;
+      else if (landAt(landPos.x, nz)) landPos.z = nz;
+
+      landDir = dz < 0 ? 'up' : dz > 0 ? 'down' : dx < 0 ? 'left' : 'right';
+
+      // random encounters while walking
+      encounterT -= dt;
+      if (encounterT <= 0) {
+        encounterT = 6 + Math.random() * 8;
+        if (Math.random() < 0.4) startLandBattle();
+      }
+
+      // discover sites by walking to them
+      for (const v of villages) {
+        if (discoveriesFound.has(v.id)) continue;
+        if (Math.hypot(v.x - landPos.x, v.y - landPos.z) < 1.5) {
+          goAshore(v);
+          break;
+        }
+      }
+    }
+    landPos.x = THREE.MathUtils.clamp(landPos.x, 2, COLS - 3);
+    landPos.z = THREE.MathUtils.clamp(landPos.z, 2, ROWS - 3);
+    landPerson.position.copy(landPos);
+    updateLandPersonSprite();
+
+    camera.position.set(landPos.x, camDist * Math.cos(CAM_TILT), landPos.z + camDist * Math.sin(CAM_TILT));
+    camera.lookAt(landPos.x, 0, landPos.z);
+
+    const nearShip = Math.hypot(landPos.x - shipPos.x, landPos.z - shipPos.z) <= 2.5;
+    showHint(landBattle ? null
+             : nearShip ? `<span class="key">L</span> re-board your ship`
+             : null);
+
+    hudTop.innerHTML =
+      `<b>${CHARACTER_NAMES[P.character]}</b> lv ${P.hero.lv} · hp ${P.hero.hp}/${heroMaxHp()}<br>` +
+      `exp ${P.hero.exp}/${P.hero.lv * 20} · day ${P.days}<br>` +
+      `<b>${fmtLonLat(landPos.x, landPos.z)}</b> · on foot`;
+  }
+
   // --- banner fade ---
   if (bannerTimer > 0) {
     bannerTimer -= dt;
@@ -2146,7 +2476,7 @@ function tick() {
   }
 
   // --- port discovery (sea) ---
-  if (started && moving && scene === 'sea') {
+  if (started && moving && scene === 'sea' && !landBattle) {
     for (const p of ports) {
       if (discovered.has(p.id)) continue;
       const d = Math.hypot(p.x - shipPos.x, p.y - shipPos.z);

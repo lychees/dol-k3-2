@@ -236,6 +236,24 @@ the uw2ol project, which took them from the original Uncharted Waters 2
   test flagships — headless SwiftShader crashes/throttles made
   wall-clock assertions flaky (game logic proven correct via
   fireBall/shipwreck instrumentation traces).
+### 14. 陆地探险（勇者斗恶龙模式）
+- **Landing (L)**: step ashore onto any adjacent land tile; the ship waits
+  at anchor. Walk the world map on foot (land tiles walkable, water
+  blocks), walk back to the ship and press L to re-board.
+- **Random encounters**: while walking, wild beasts attack — Dragon-Quest
+  style turn-based battles (Attack / Balm / Run) with a battle log,
+  party HP bars, and the battle theme (battle.ogg).
+- **Party**: the hero plus up to 3 mates (swordplay = attack). Hero
+  levels up with exp (maxHp/atk/def grow); mates fight with their own
+  HP/atk/def.
+- **Hero equipment** (item shop): 3 weapon tiers (+4/8/14 atk), 3 armor
+  tiers (+2/5/9 def), healing balms (30 HP in battle). Inn rest heals
+  the whole party.
+- **Monsters**: 8 tiers from the discoveries art (Prairie Dog → Blue
+  Whale), scaled to hero level. Defeat = wake at the ship, 1 HP, -10%
+  gold.
+- **Discoveries by foot**: walking within 1.5 tiles of a site triggers
+  the discovery — inland sites now genuinely require an expedition.
 ## Key file formats (cheat sheet)
 
 | Data | Format |
