@@ -385,6 +385,7 @@ function npcDialog(npc) {
 }
 
 function nearestNpc() {
+  if (currentPhase === 'night') return null;   // npcs are home at night
   let best = null, bestD = 1.8;
   for (const n of npcs) {
     const d = Math.hypot(n.pos.x - personPos.x, n.pos.z - personPos.z);
@@ -2289,6 +2290,7 @@ function showHint(html) {
 // ---------------------------------------------------------------------------
 const clock = new THREE.Clock();
 let gameTime = DAY_LENGTH_SEC * 0.3;   // start mid-morning
+let currentPhase = 'day';
 let started = false;
 
 // debug hook
@@ -2390,6 +2392,7 @@ function tick() {
   const segT = t * 4 - seg;
   const FADE = 0.25;                              // last 25% of a phase fades to next
   const a = phaseNames[seg];
+  currentPhase = a;
   const b = phaseNames[(seg + 1) % 4];
   const blend = segT > 1 - FADE ? (segT - (1 - FADE)) / FADE : 0;
   world.uniforms.tilesA.value = phaseTex[a];
