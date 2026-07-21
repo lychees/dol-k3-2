@@ -30,7 +30,7 @@ const CAM_TILT = 0.35;                  // radians from vertical
 // ---------------------------------------------------------------------------
 // Boot: load all assets, then init
 // ---------------------------------------------------------------------------
-const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, shipTex, personTex] =
+const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, shipData, shipTex, personTex] =
   await Promise.all([
     fetch('./assets/world_map.bin').then(r => r.arrayBuffer()),
     fetch('./assets/portmaps.bin').then(r => r.arrayBuffer()),
@@ -39,6 +39,7 @@ const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, 
     fetch('./assets/building_names.json').then(r => r.json()),
     fetch('./assets/villages.json').then(r => r.json()),
     fetch('./assets/goods.json').then(r => r.json()),
+    fetch('./assets/ships.json').then(r => r.json()),
     loadTex('./assets/ship-tileset.png', false),
     loadTex('./assets/person-tileset.png', false),
   ]);
@@ -175,7 +176,7 @@ let animFrame = 0, animTimer = 0;
 
 function updateShipSprite() {
   const col = DIRECTION_COL[shipDir] + animFrame;
-  shipMap.offset.set(col / 8, 0.5);   // row 1 from top -> v offset 0.5
+  shipMap.offset.set(col / 8, (3 - curShip().row) / 4);   // sprite row by ship size
 }
 
 // start position: just off Lisbon (port tile 840,358 is land; sea to the west)
@@ -297,6 +298,7 @@ async function enterPort(pid) {
 
   scene = 'port';
   camDist = 20;
+  endBattle();                    // reaching port shakes off any pursuers
   const name = ports.find(p => p.id === pid)?.name ?? meta.name;
   showBanner(`${name}<small>press Esc at any time to set sail</small>`);
   playMusic(portMusicFor(pid));
@@ -317,18 +319,25 @@ function setSail() {
 // ---------------------------------------------------------------------------
 // Player state (persisted to localStorage)
 // ---------------------------------------------------------------------------
-const SHIPS = [
-  { name: 'Sloop',   speed: 7,   cargo: 20, hull: 100, price: 0 },
-  { name: 'Caravel', speed: 8.5, cargo: 40, hull: 150, price: 5000 },
-  { name: 'Galleon', speed: 10,  cargo: 80, hull: 220, price: 20000 },
-];
+// 22 real ships from uw2ol's hash_ship_name_to_attributes, sorted by price
+const SHIPS = Object.entries(shipData).map(([name, a]) => ({
+  name,
+  speed: 4 + a.power / 16,                          // ~7.8 - 10.3 tiles/s
+  cargo: Math.max(10, Math.round(a.capacity / 10)),
+  hull: a.durability * 2,
+  guns: a.guns,
+  price: a.price,
+  row: a.capacity < 100 ? 0 : a.capacity < 300 ? 2 : a.capacity < 600 ? 1 : 3,
+})).sort((x, y) => x.price - y.price);
+const shipByName = n => SHIPS.find(s => s.name === n) ?? SHIPS[0];
+
 const TITLES = [[50, 'Duke'], [40, 'Marquis'], [30, 'Earl'], [20, 'Viscount'],
                 [15, 'Baron'], [10, 'Knight'], [5, 'Squire'], [0, '']];
 
 const SAVE_KEY = 'uw-save-v1';
 let P = {
   gold: 1000, fame: 0, provisions: 100, fatigue: 0,
-  shipTier: 0, hull: 100, cargo: {}, bank: 0,
+  ship: 'Balsa', hull: 60, cargo: {}, cargoCost: {}, bank: 0,
   telescope: false, discoveryQuest: null, deliveryQuest: null,
   palaceMilestone: 0, days: 0, discoveries: [], portsFound: [],
   devSpeed: null,                 // developer-mode ship speed override
@@ -337,6 +346,15 @@ try {
   const s = JSON.parse(localStorage.getItem(SAVE_KEY));
   if (s && typeof s === 'object') P = { ...P, ...s };
 } catch { /* fresh game */ }
+// migrate saves from the 3-tier ship system
+if (P.shipTier !== undefined) {
+  P.ship = ['Sloop', 'Caravela Redonda', 'Galleon'][P.shipTier] ?? 'Balsa';
+  delete P.shipTier;
+  P.hull = Math.min(P.hull, shipByName(P.ship).hull);
+}
+P.cargoCost = P.cargoCost ?? {};
+
+const curShip = () => shipByName(P.ship);
 
 // discoveries / found ports live in Sets, mirrored into P on save
 const discoveriesFound = new Set(P.discoveries);
@@ -349,7 +367,7 @@ function save() {
 }
 
 const cargoUsed = () => Object.values(P.cargo).reduce((a, b) => a + b, 0);
-const cargoSpace = () => SHIPS[P.shipTier].cargo - cargoUsed();
+const cargoSpace = () => curShip().cargo - cargoUsed();
 const fameTitle = () => TITLES.find(([n]) => P.fame >= n)[1];
 
 function speedFactor() {
@@ -419,7 +437,7 @@ const FORTUNES = [
 
 function buildingMenu(b) {
   if (!b) return [];
-  const ship = SHIPS[P.shipTier];
+  const ship = curShip();
   switch (b.name) {
     case 'harbor': return [
       { label: 'Buy provisions (fill to 100)', cost: 100 - P.provisions,
@@ -448,19 +466,12 @@ function buildingMenu(b) {
     ];
     case 'dry_dock': {
       const dmg = ship.hull - P.hull;
-      const menu = [
+      return [
         { label: `Repair hull (${P.hull}/${ship.hull})`, cost: dmg * 2, disabled: dmg <= 0,
           action() { P.gold -= dmg * 2; P.hull = ship.hull;
                      setBuildingText('Hull patched and caulked. She\'s seaworthy again.'); } },
+        { label: 'Buy a new ship', action() { openShipyard(); } },
       ];
-      if (P.shipTier < SHIPS.length - 1) {
-        const next = SHIPS[P.shipTier + 1];
-        menu.push({ label: `Buy ${next.name} (speed ${next.speed}, cargo ${next.cargo})`, cost: next.price,
-          action() { P.gold -= next.price; P.shipTier++;
-                     P.hull = SHIPS[P.shipTier].hull;
-                     setBuildingText(`The ${next.name} is yours, captain. A fine vessel!`); } });
-      }
-      return menu;
     }
     case 'palace': {
       const next = P.palaceMilestone + 5;
@@ -594,6 +605,7 @@ function openBuilding(b) {
 function hideBuildingPanel() {
   buildingPanel.style.display = 'none';
   closeMarket();
+  closeShipyard();
   if (inBuilding && ['bar', 'church', 'palace'].includes(inBuilding.name)) {
     playMusic(portMusicFor(portId));
   }
@@ -605,6 +617,40 @@ function hideBuildingPanel() {
 // ---------------------------------------------------------------------------
 const marketPanel = document.getElementById('market-panel');
 let marketOpen = false;
+
+// --- goods icons: colored category badges with a monogram -------------------
+const GOOD_CATS = {
+  spice:  { color: '#c0392b', goods: ['Clove','Cinnamon','Pepper','Nutmeg','Pimento','Ginger','Musk'] },
+  food:   { color: '#27ae60', goods: ['Sugar','Cheese','Fish','Grain','Olive Oil','Wine','Rock Salt'] },
+  fabric: { color: '#8e44ad', goods: ['Silk','Cotton','Wool','Flax'] },
+  cloth:  { color: '#2980b9', goods: ['Cotton Cloth','Silk Cloth','Wool Cloth','Velvet','Linen Cloth','Carpet'] },
+  special:{ color: '#8b5a2b', goods: ['Tobacco','Tea','Coffee','Cacao'] },
+  arms:   { color: '#7f1d1d', goods: ['Arms'] },
+  gem:    { color: '#16a3a3', goods: ['Amber','Coral','Pearl','Ivory','Tortoise Shell','Art','Porcelain','Glassware','Glass Beads'] },
+  metal:  { color: '#6b7280', goods: ['Copper Ore','Iron Ore','Tin Ore','Gold','Silver'] },
+};
+const goodCat = {};
+for (const c of Object.values(GOOD_CATS)) for (const g of c.goods) goodCat[g] = c.color;
+const iconCache = {};
+function goodIcon(name) {
+  if (iconCache[name]) return iconCache[name];
+  const c = document.createElement('canvas');
+  c.width = c.height = 22;
+  const g = c.getContext('2d');
+  g.fillStyle = goodCat[name] ?? '#a08040';
+  g.beginPath();
+  g.roundRect(0, 0, 22, 22, 4);
+  g.fill();
+  g.fillStyle = '#fff';
+  g.font = 'bold 13px Georgia, serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(name[0], 11, 12);
+  return iconCache[name] = c.toDataURL();
+}
+
+// average purchase price of a held good (0 = unknown / gift)
+const avgBuy = name => (P.cargo[name] ?? 0) > 0 ? (P.cargoCost[name] ?? 0) / P.cargo[name] : 0;
 
 function marketRows() {
   const meta = portMeta[Math.min(portId, 101)];
@@ -627,37 +673,66 @@ function marketRows() {
   return rows.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function renderMarket() {
+function renderMarket(msg = '') {
   document.getElementById('market-info').innerHTML =
-    `gold: <b>${P.gold}g</b> &nbsp;·&nbsp; cargo space: <b>${cargoSpace()}</b> / ${SHIPS[P.shipTier].cargo}`;
+    `gold: <b>${P.gold}g</b> &nbsp;·&nbsp; cargo space: <b>${cargoSpace()}</b> / ${curShip().cargo}` +
+    (msg ? ` &nbsp;·&nbsp; ${msg}` : '');
   const div = document.getElementById('market-table');
   // only goods sold here, plus whatever the player holds and can sell
   const rows = marketRows().filter(r => r.buy != null || (P.cargo[r.name] ?? 0) > 0);
   let html = '<table><tr><th>goods</th><th>buy</th><th>sell</th><th>hold</th><th></th></tr>';
   for (const r of rows) {
     const hold = P.cargo[r.name] ?? 0;
-    html += `<tr${r.special ? ' class="specialty"' : ''}><td>${r.name}${r.special ? ' ★' : ''}</td>` +
-      `<td class="num">${r.buy ?? '—'}</td><td class="num">${r.sell}</td><td class="num">${hold}</td><td></td></tr>`;
+    // profit per unit vs average purchase price (green gain / red loss)
+    let sellCell = `${r.sell}`;
+    if (hold > 0 && avgBuy(r.name) > 0) {
+      const pl = r.sell - avgBuy(r.name);
+      sellCell += pl > 0 ? ` <span class="pos">(+${pl.toFixed(0)})</span>`
+               : pl < 0 ? ` <span class="neg">(${pl.toFixed(0)})</span>` : '';
+    }
+    html += `<tr${r.special ? ' class="specialty"' : ''}>` +
+      `<td><img class="good-icon" src="${goodIcon(r.name)}" alt="">${r.name}${r.special ? ' ★' : ''}</td>` +
+      `<td class="num">${r.buy ?? '—'}</td><td class="num">${sellCell}</td><td class="num">${hold}</td><td></td></tr>`;
   }
   div.innerHTML = html + '</table>';
   const trs = div.querySelectorAll('tr');
+  const buyN = (r, n) => {
+    P.gold -= r.buy * n;
+    P.cargo[r.name] = (P.cargo[r.name] ?? 0) + n;
+    P.cargoCost[r.name] = (P.cargoCost[r.name] ?? 0) + r.buy * n;
+    save(); renderMarket(`Bought ${n} ${r.name} (-${r.buy * n}g)`);
+  };
+  const sellN = (r, n) => {
+    const hold = P.cargo[r.name];
+    n = Math.min(n, hold);
+    const revenue = r.sell * n;
+    const costCut = (P.cargoCost[r.name] ?? 0) * n / hold;
+    const pl = revenue - costCut;
+    P.gold += revenue;
+    P.cargo[r.name] -= n;
+    P.cargoCost[r.name] = (P.cargoCost[r.name] ?? 0) - costCut;
+    if (!P.cargo[r.name]) { delete P.cargo[r.name]; delete P.cargoCost[r.name]; }
+    save();
+    const plTxt = costCut > 0
+      ? (pl >= 0 ? ` <span class="pos">profit +${pl.toFixed(0)}g</span>`
+                 : ` <span class="neg">loss ${pl.toFixed(0)}g</span>`) : '';
+    renderMarket(`Sold ${n} ${r.name} (+${revenue}g)${plTxt}`);
+  };
   rows.forEach((r, i) => {
     const td = trs[i + 1].lastChild;
     const mk = (label, fn, disabled) => {
       const btn = document.createElement('button');
-      btn.textContent = label; btn.disabled = disabled; btn.onclick = () => { fn(); save(); renderMarket(); };
+      btn.textContent = label; btn.disabled = disabled; btn.onclick = fn;
       td.appendChild(btn);
     };
     if (r.buy != null) {
-      mk('+1', () => { P.gold -= r.buy; P.cargo[r.name] = (P.cargo[r.name] ?? 0) + 1; },
-         P.gold < r.buy || cargoSpace() < 1);
-      mk('+10', () => { P.gold -= r.buy * 10; P.cargo[r.name] = (P.cargo[r.name] ?? 0) + 10; },
-         P.gold < r.buy * 10 || cargoSpace() < 10);
+      mk('+1', () => buyN(r, 1), P.gold < r.buy || cargoSpace() < 1);
+      mk('+10', () => buyN(r, 10), P.gold < r.buy * 10 || cargoSpace() < 10);
     }
     const hold = P.cargo[r.name] ?? 0;
     if (hold > 0) {
-      mk('-1', () => { P.gold += r.sell; P.cargo[r.name]--; if (!P.cargo[r.name]) delete P.cargo[r.name]; }, false);
-      mk('all', () => { P.gold += r.sell * hold; delete P.cargo[r.name]; }, false);
+      mk('-1', () => sellN(r, 1), false);
+      mk('all', () => sellN(r, hold), false);
     }
   });
 }
@@ -674,6 +749,274 @@ function closeMarket() {
   marketOpen = false;
   marketPanel.style.display = 'none';
   if (inBuilding) buildingPanel.style.display = 'block';
+}
+
+// ---------------------------------------------------------------------------
+// Shipyard (buy one of the 22 ship types at the dry dock)
+// ---------------------------------------------------------------------------
+const shipyardPanel = document.getElementById('shipyard-panel');
+let shipyardOpen = false;
+
+function renderShipyard() {
+  document.getElementById('shipyard-info').innerHTML =
+    `gold: <b>${P.gold}g</b> &nbsp;·&nbsp; current ship: <b>${P.ship}</b>`;
+  const div = document.getElementById('shipyard-table');
+  let html = '<table><tr><th>ship</th><th>speed</th><th>cargo</th><th>hull</th><th>guns</th><th>price</th><th></th></tr>';
+  for (const s of SHIPS) {
+    const own = s.name === P.ship;
+    html += `<tr><td>${s.name}${own ? ' ★' : ''}</td>` +
+      `<td class="num">${s.speed.toFixed(1)}</td><td class="num">${s.cargo}</td>` +
+      `<td class="num">${s.hull}</td><td class="num">${s.guns}</td>` +
+      `<td class="num">${s.price}</td><td></td></tr>`;
+  }
+  div.innerHTML = html + '</table>';
+  const trs = div.querySelectorAll('tr');
+  SHIPS.forEach((s, i) => {
+    const td = trs[i + 1].lastChild;
+    const btn = document.createElement('button');
+    btn.textContent = s.name === P.ship ? 'owned' : 'buy';
+    btn.disabled = s.name === P.ship || P.gold < s.price || cargoUsed() > s.cargo;
+    btn.title = cargoUsed() > s.cargo ? 'your cargo does not fit' : '';
+    btn.onclick = () => {
+      P.gold -= s.price;
+      P.ship = s.name;
+      P.hull = s.hull;
+      save(); renderShipyard();
+    };
+    td.appendChild(btn);
+  });
+}
+
+function openShipyard() {
+  shipyardOpen = true;
+  buildingPanel.style.display = 'none';
+  renderShipyard();
+  shipyardPanel.style.display = 'block';
+}
+
+function closeShipyard() {
+  if (!shipyardOpen) return;
+  shipyardOpen = false;
+  shipyardPanel.style.display = 'none';
+  if (inBuilding) buildingPanel.style.display = 'block';
+}
+
+// ---------------------------------------------------------------------------
+// Naval battles: pirates hunt at sea; SPACE fires a broadside
+// ---------------------------------------------------------------------------
+const battleHud = document.getElementById('battle-hud');
+const PIRATE_SHIPS = ['Brigantine', 'Nao', 'Galleon', 'Carrack'];
+let pirates = [];             // overworld NPC ships hunting the player
+let battle = null;            // {enemy, balls, cd}
+let pirateTimer = 30;         // seconds until next spawn check
+
+const ballGeo = new THREE.PlaneGeometry(0.5, 0.5);
+const ballMat = new THREE.MeshBasicMaterial({ color: 0x111111, side: THREE.DoubleSide });
+
+function makeShipMesh(row) {
+  const map = shipTex.clone();
+  map.needsUpdate = true;
+  map.repeat.set(1 / 8, 1 / 4);
+  map.offset.set(0, (3 - row) / 4);
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(2, 2),
+    new THREE.MeshBasicMaterial({ map, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide }));
+  mesh.rotation.x = -Math.PI / 2;
+  return mesh;
+}
+
+function spawnPirate(x, z, name) {
+  const ship = shipByName(name ?? PIRATE_SHIPS[Math.floor(Math.random() * PIRATE_SHIPS.length)]);
+  const mesh = makeShipMesh(ship.row);
+  seaScene.add(mesh);
+  const p = { mesh, pos: new THREE.Vector3(x, 0.4, z), dir: 'down', ship,
+              hull: ship.hull, cooldown: 2, fleeing: false, frame: 0, animT: 0 };
+  mesh.position.copy(p.pos);
+  pirates.push(p);
+  return p;
+}
+
+function removePirate(p) {
+  seaScene.remove(p.mesh);
+  const i = pirates.indexOf(p);
+  if (i >= 0) pirates.splice(i, 1);
+}
+
+function startBattle(p) {
+  if (battle) return;
+  battle = { enemy: p, balls: [], cd: 0 };
+  showBanner(`Pirates — ${p.ship.name}!<small>SPACE to fire · sink them or outrun them (25 tiles)</small>`);
+  playSfx('./assets/sounds/engage.ogg');
+}
+
+function endBattle() {
+  if (battle) {
+    for (const b of battle.balls) seaScene.remove(b.mesh);
+  }
+  battle = null;
+}
+
+function fireBall(fromPos, targetPos, dmg, fromPlayer) {
+  const dir = new THREE.Vector3(targetPos.x - fromPos.x, 0, targetPos.z - fromPos.z).normalize();
+  const mesh = new THREE.Mesh(ballGeo, ballMat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(fromPos.x, 0.5, fromPos.z);
+  seaScene.add(mesh);
+  battle.balls.push({ mesh, dir, dmg, fromPlayer, life: 1.5 });
+  playSfx('./assets/sounds/shoot.ogg');
+}
+
+function fireCannon() {
+  if (!battle || battle.cd > 0 || !started || scene !== 'sea') return;
+  if (shipPos.distanceTo(battle.enemy.pos) > 10) return;
+  battle.cd = 2;
+  fireBall(shipPos, battle.enemy.pos, curShip().guns / 4, true);
+}
+
+function sinkEnemy() {
+  const p = battle.enemy;
+  removePirate(p);
+  const loot = Math.floor(150 + Math.random() * 400 + p.ship.price / 100);
+  P.gold += loot;
+  P.fame += 3;
+  save();
+  playSfx('./assets/sounds/explosion.ogg');
+  showBanner(`Enemy ship sunk!<small>loot: ${loot}g · fame +3</small>`);
+  endBattle();
+}
+
+function shipwreck() {
+  P.gold = Math.floor(P.gold / 2);
+  P.cargo = {};
+  P.cargoCost = {};
+  P.hull = Math.floor(curShip().hull * 0.3);
+  // limp to the nearest discovered port
+  const ids = discovered.size ? [...discovered] : [1];
+  let best = ports[0], bd = 1e9;
+  for (const pid of ids) {
+    const p = ports.find(x => x.id === pid);
+    if (!p) continue;
+    const d = Math.hypot(p.x - shipPos.x, p.y - shipPos.z);
+    if (d < bd) { bd = d; best = p; }
+  }
+  for (let r = 2; r < 12; r++) {
+    let ok = false;
+    for (const [ox, oz] of [[-r, 0], [r, 0], [0, -r], [0, r], [-r, -r], [-r, r], [r, -r], [r, r]]) {
+      if (sailableAt(best.x + ox, best.y + oz)) {
+        shipPos.set(best.x + ox, 0.4, best.y + oz);
+        ok = true; break;
+      }
+    }
+    if (ok) break;
+  }
+  showBanner(`Shipwreck!<small>half your gold and all cargo lost — you limped to ${best.name}</small>`);
+  save();
+  endBattle();
+}
+
+function updatePirates(dt) {
+  // spawn new pirates over time
+  pirateTimer -= dt;
+  if (pirateTimer <= 0) {
+    pirateTimer = 25 + Math.random() * 20;
+    if (pirates.length < 2 && Math.random() < 0.6) {
+      for (let tries = 0; tries < 12; tries++) {
+        const ang = Math.random() * Math.PI * 2;
+        const d = 12 + Math.random() * 6;
+        const x = shipPos.x + Math.cos(ang) * d, z = shipPos.z + Math.sin(ang) * d;
+        if (sailableAt(x, z)) { spawnPirate(x, z); break; }
+      }
+    }
+  }
+
+  for (let i = pirates.length - 1; i >= 0; i--) {
+    const p = pirates[i];
+    const dx = shipPos.x - p.pos.x, dz = shipPos.z - p.pos.z;
+    const dist = Math.hypot(dx, dz) || 0.001;
+    let mvx = 0, mvz = 0;
+
+    if (battle && battle.enemy === p) {
+      // combat AI: flee when badly damaged, else close in and circle
+      if (p.hull < p.ship.hull * 0.25) p.fleeing = true;
+      if (p.fleeing) { mvx = -dx / dist; mvz = -dz / dist; }
+      else if (dist > 5) { mvx = dx / dist; mvz = dz / dist; }
+      else { mvx = -dz / dist * 0.6; mvz = dx / dist * 0.6; }
+      p.cooldown -= dt;
+      if (p.cooldown <= 0 && dist < 10 && !p.fleeing) {
+        p.cooldown = 2.5;
+        fireBall(p.pos, shipPos, p.ship.guns / 4, false);
+      }
+      if (p.fleeing && dist > 30) {
+        showBanner('The pirates fled!');
+        removePirate(p);
+        endBattle();
+        continue;
+      }
+      // player outran them
+      if (dist > 25) {
+        showBanner('You outran the pirates!');
+        removePirate(p);
+        endBattle();
+        continue;
+      }
+    } else if (!battle && dist < 20) {
+      mvx = dx / dist; mvz = dz / dist;
+      if (dist < 3) startBattle(p);
+    } else if (dist > 60) {
+      removePirate(p);
+      continue;
+    }
+
+    if (mvx || mvz) {
+      const sp = 5 * dt;
+      const nx = p.pos.x + mvx * sp, nz = p.pos.z + mvz * sp;
+      if (sailableAt(nx, nz)) { p.pos.x = nx; p.pos.z = nz; }
+      p.dir = mvz < -0.3 ? (mvx < -0.3 ? 'nw' : mvx > 0.3 ? 'ne' : 'up')
+            : mvz > 0.3 ? (mvx < -0.3 ? 'sw' : mvx > 0.3 ? 'se' : 'down')
+            : mvx < 0 ? 'left' : 'right';
+      p.animT += dt;
+      if (p.animT > 0.35) { p.animT = 0; p.frame ^= 1; }
+    }
+    p.mesh.position.copy(p.pos);
+    p.mesh.material.map.offset.set((DIRECTION_COL[p.dir] + p.frame) / 8, (3 - p.ship.row) / 4);
+  }
+}
+
+function updateBattle(dt) {
+  if (!battle) { battleHud.style.display = 'none'; return; }
+  battleHud.style.display = 'block';
+  battle.cd -= dt;
+  const e = battle.enemy;
+  document.getElementById('battle-my-label').textContent =
+    `${P.ship} — hull ${Math.ceil(P.hull)}/${curShip().hull}`;
+  document.getElementById('battle-my-bar').style.width = `${P.hull / curShip().hull * 100}%`;
+  document.getElementById('battle-enemy-label').textContent =
+    `${e.ship.name} — hull ${Math.ceil(e.hull)}/${e.ship.hull}`;
+  document.getElementById('battle-enemy-bar').style.width = `${Math.max(0, e.hull) / e.ship.hull * 100}%`;
+
+  for (let i = battle.balls.length - 1; i >= 0; i--) {
+    const b = battle.balls[i];
+    b.life -= dt;
+    b.mesh.position.addScaledVector(b.dir, 18 * dt);
+    const target = b.fromPlayer ? e.pos : shipPos;
+    const d = Math.hypot(target.x - b.mesh.position.x, target.z - b.mesh.position.z);
+    let remove = b.life <= 0;
+    if (d < 1.2 && battle) {
+      remove = true;
+      playSfx('./assets/sounds/explosion.ogg');
+      if (b.fromPlayer) {
+        e.hull -= b.dmg;
+        if (e.hull <= 0) sinkEnemy();
+      } else {
+        P.hull = Math.max(0, P.hull - b.dmg);
+        if (P.hull <= 0) shipwreck();
+      }
+    }
+    if (remove) {
+      seaScene.remove(b.mesh);
+      if (battle) battle.balls.splice(i, 1);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -765,6 +1108,11 @@ function drawMinimap() {
     mmCtx.beginPath();
     mmCtx.arc(shipPos.x / COLS * mm.width, shipPos.z / ROWS * mm.height, 2.5, 0, 7);
     mmCtx.fill();
+    // pirates show as dark red dots
+    mmCtx.fillStyle = '#b91c1c';
+    for (const p of pirates) {
+      mmCtx.fillRect(p.pos.x / COLS * mm.width - 1.5, p.pos.z / ROWS * mm.height - 1.5, 3, 3);
+    }
   } else {
     mmCtx.clearRect(0, 0, mm.width, mm.height);
     mmCtx.drawImage(mmPort, 0, 0, mm.width, mm.height);   // stretch to fit — show the whole port
@@ -790,6 +1138,7 @@ addEventListener('keydown', e => {
   if (k === '`') toggleDev();
   if (k === 'e') onUseKey();
   if (k === 'g') onAshoreKey();
+  if (k === ' ') fireCannon();
   if (k === 'escape') onEscapeKey();
   if (['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
 });
@@ -817,6 +1166,7 @@ function onUseKey() {
   if (!started) return;
   if (discoveryPanel.style.display === 'block') { discoveryPanel.style.display = 'none'; return; }
   if (marketOpen) { closeMarket(); return; }
+  if (shipyardOpen) { closeShipyard(); return; }
   if (scene === 'sea') {
     const p = nearestPort();
     if (p) enterPort(p.id);
@@ -838,6 +1188,7 @@ function onEscapeKey() {
   if (discoveryPanel.style.display === 'block') { discoveryPanel.style.display = 'none'; return; }
   if (devOpen) { toggleDev(); return; }
   if (marketOpen) { closeMarket(); return; }
+  if (shipyardOpen) { closeShipyard(); return; }
   if (scene === 'port') {
     if (inBuilding) hideBuildingPanel();
     else setSail();
@@ -852,9 +1203,9 @@ let devOpen = false;
 
 function refreshDevPanel() {
   document.getElementById('dev-gold').value = P.gold;
-  document.getElementById('dev-speed').value = P.devSpeed ?? SHIPS[P.shipTier].speed;
+  document.getElementById('dev-speed').value = P.devSpeed ?? curShip().speed;
   document.getElementById('dev-status').textContent =
-    `ship: ${SHIPS[P.shipTier].name} · speed override: ${P.devSpeed ?? 'off'}`;
+    `ship: ${P.ship} · speed override: ${P.devSpeed ?? 'off'}`;
 }
 
 function toggleDev() {
@@ -998,6 +1349,12 @@ window.UW = {
   P,                                        // player state (gold, cargo, ...)
   save,
   openBuilding: b => openBuilding(b),
+  spawnPirate: (x, z, name) => spawnPirate(x ?? shipPos.x + 4, z ?? shipPos.z, name),
+  fireCannon,
+  getBattle: () => battle && { name: battle.enemy.ship.name, enemyHull: battle.enemy.hull,
+                               balls: battle.balls.length,
+                               ex: battle.enemy.pos.x, ez: battle.enemy.pos.z },
+  getPirates: () => pirates.length,
   reset: () => { localStorage.removeItem(SAVE_KEY); location.reload(); },
 };
 
@@ -1034,7 +1391,7 @@ function tick() {
 
   // --- movement input ---
   let dx = 0, dz = 0;
-  const panelOpen = discoveryPanel.style.display === 'block' || inBuilding || marketOpen || devOpen;
+  const panelOpen = discoveryPanel.style.display === 'block' || inBuilding || marketOpen || shipyardOpen || devOpen;
   if (started && !panelOpen) {
     if (keys['w'] || keys['arrowup']) dz -= 1;
     if (keys['s'] || keys['arrowdown']) dz += 1;
@@ -1051,7 +1408,7 @@ function tick() {
 
   if (scene === 'sea') {
     // --- ship movement (slide along coasts) ---
-    const curSpeed = (P.devSpeed ?? SHIPS[P.shipTier].speed) * speedFactor();
+    const curSpeed = (P.devSpeed ?? curShip().speed) * speedFactor();
     if (moving) {
       const step = curSpeed * dt;
       const nx = shipPos.x + dx * step, nz = shipPos.z + dz * step;
@@ -1077,6 +1434,10 @@ function tick() {
     showHint(p ? `<span class="key">E</span> enter ${p.name}`
              : v ? `<span class="key">G</span> go ashore — something seems interesting here`
              : null);
+
+    // --- pirates & battle ---
+    if (started && !panelOpen) updatePirates(dt);
+    updateBattle(dt);
 
     // --- HUD ---
     hudTop.innerHTML =
@@ -1127,7 +1488,7 @@ function tick() {
     hudTop.innerHTML =
       `<b>${portName}</b> · day ${P.days}<br>` +
       `time: ${a} · gold: ${P.gold}g<br>` +
-      `fame: ${P.fame}${fameTitle() ? ' · ' + fameTitle() : ''} · ${SHIPS[P.shipTier].name}`;
+      `fame: ${P.fame}${fameTitle() ? ' · ' + fameTitle() : ''} · ${P.ship}`;
   }
 
   // --- banner fade ---

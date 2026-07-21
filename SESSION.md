@@ -149,6 +149,25 @@ All game assets (map data, tiles, sprites, music, images) are extracted from
 the uw2ol project, which took them from the original Uncharted Waters 2
 (Koei, 1993). For non-commercial fan/educational use only.
 
+### 9. 货物图标/盈亏 + 22 种船 + 海战
+- **Goods icons**: canvas-generated category badges (spice/food/fabric/
+  cloth/special/arms/gem/metal colors + monogram) in the market table.
+- **Profit tracking**: `P.cargoCost` records purchase cost; held goods show
+  per-unit profit/loss next to the sell price (green `+n` / red `-n`), and
+  every sale prints revenue plus green-profit / red-loss in the info line.
+- **22 real ship types** from uw2ol's hash_ship_name_to_attributes
+  (Balsa 1,200g → Full Rigged Ship 320,000g): speed from power, cargo from
+  capacity, hull from durability, guns; sprite row by size. Dry dock opens
+  a shipyard table to buy any of them (old 3-tier saves migrate).
+- **Naval battles**: pirates spawn over time at sea (shown on the minimap),
+  chase within 20 tiles and engage on contact. Real-time broadsides
+  (SPACE, 2s cooldown, range 10), cannonballs with shoot/explosion sfx,
+  hull bars HUD, enemy AI (close in, circle, flee under 25% hull).
+  Sinking them loots gold + fame; losing means shipwreck (half gold and
+  all cargo lost, limp to nearest port); outrun them past 25 tiles to
+  escape; entering port shakes pursuers.
+- Bug found in review: shipyard panel wasn't wired into Esc/E/panelOpen —
+  fixed alongside.
 ## Key file formats (cheat sheet)
 
 | Data | Format |

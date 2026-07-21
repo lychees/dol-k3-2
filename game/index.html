@@ -49,14 +49,30 @@
   .panel button:disabled { opacity: .4; cursor: default; }
 
   #market-panel { max-width: 720px; width: 90vw; }
-  #market-table { max-height: 46vh; overflow-y: auto; margin-top: 8px; }
-  #market-table table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  #market-table th { color: #ffd94d; position: sticky; top: 0;
+  .datatable { max-height: 46vh; overflow-y: auto; margin-top: 8px; }
+  .datatable table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .datatable th { color: #ffd94d; position: sticky; top: 0;
                      background: #141c30; padding: 4px 6px; }
-  #market-table td { padding: 3px 6px; border-bottom: 1px solid #2a3444; }
-  #market-table td.num { text-align: right; font-family: monospace; }
-  #market-table button { font-size: 12px; padding: 2px 8px; margin: 1px 2px; }
+  .datatable td { padding: 3px 6px; border-bottom: 1px solid #2a3444; }
+  .datatable td.num { text-align: right; font-family: monospace; }
+  .datatable button { font-size: 12px; padding: 2px 8px; margin: 1px 2px; }
   #market-table tr.specialty td { color: #7fd4ff; }
+  .good-icon { width: 20px; height: 20px; vertical-align: -5px; margin-right: 6px;
+               border-radius: 4px; image-rendering: pixelated; }
+  .pos { color: #4ade80; }
+  .neg { color: #f87171; }
+  #shipyard-panel { max-width: 760px; width: 92vw; }
+
+  #battle-hud { position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
+                z-index: 6; display: none; text-align: center; color: #fff;
+                text-shadow: 1px 1px 2px #000; font-size: 14px; }
+  #battle-hud .bar { width: 220px; height: 12px; background: #401010;
+                     border: 1px solid #8a6d3b; border-radius: 3px; margin: 3px auto;
+                     position: relative; }
+  #battle-hud .bar > i { display: block; height: 100%; background: #4ade80;
+                         border-radius: 2px; transition: width .2s; }
+  #battle-hud .bar.enemy > i { background: #f87171; }
+  #battle-hud .hull-label { color: #ffe9a8; }
 
   #start-overlay { position: fixed; inset: 0; z-index: 10;
                    background: radial-gradient(ellipse at center, #0d2b4d 0%, #020a14 100%);
@@ -105,8 +121,23 @@
 <div class="panel" id="market-panel">
   <h2>Market</h2>
   <p id="market-info"></p>
-  <div id="market-table"></div>
+  <div id="market-table" class="datatable"></div>
   <div class="close-hint"><span class="key">Esc</span> leave market</div>
+</div>
+
+<div class="panel" id="shipyard-panel">
+  <h2>Shipyard</h2>
+  <p id="shipyard-info"></p>
+  <div id="shipyard-table" class="datatable"></div>
+  <div class="close-hint"><span class="key">Esc</span> leave shipyard</div>
+</div>
+
+<div id="battle-hud">
+  <div><span class="hull-label" id="battle-my-label"></span></div>
+  <div class="bar"><i id="battle-my-bar"></i></div>
+  <div><span class="hull-label" id="battle-enemy-label"></span></div>
+  <div class="bar enemy"><i id="battle-enemy-bar"></i></div>
+  <div style="color:#ffd94d">SPACE to fire!</div>
 </div>
 
 <div class="panel" id="dev-panel">

@@ -131,4 +131,15 @@ for pid, s in hash_special_goods.items():
 with open(f'{OUT}/goods.json', 'w') as f:
     json.dump({'regions': goods, 'specialties': specialties}, f)
 print('goods.json:', len(goods), 'regions,', len(specialties), 'specialties')
+# --- 9. ships + battle sounds ------------------------------------------------
+from hashes.hash_ship_name_to_attributes import hash_ship_name_to_attributes
+ships = {name: {'durability': a['durability'], 'power': a['power'],
+                'capacity': a['capacity'], 'guns': a['max_guns'], 'price': a['price']}
+         for name, a in hash_ship_name_to_attributes.items()}
+with open(f'{OUT}/ships.json', 'w') as f:
+    json.dump(ships, f)
+print('ships.json:', len(ships), 'ships')
+for m in ['shoot.ogg', 'explosion.ogg', 'engage.ogg']:
+    shutil.copy(f'{UW}/assets/sounds/effect/{m}', f'{OUT}/sounds/{m}')
+print('battle sounds copied')
 print('DONE')
