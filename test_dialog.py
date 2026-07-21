@@ -27,7 +27,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(1500)
 
     # --- walk to the agent (market at 41,59; npc stands at 41.5,60.5) ---
-    page.evaluate("window.UW.walkTo(41.5, 60.0)")
+    page.evaluate("window.UW.walkTo(43.5, 60.5)")
     page.wait_for_timeout(400)
     hint = page.inner_text("#hint")
     check(f"hint shows talk ({hint})", "talk to agent" in hint)
@@ -44,7 +44,7 @@ with sync_playwright() as p:
     check("dialog closes with Esc", not page.is_visible("#dialog-panel"))
 
     # --- dog at the bar (54,34 -> npc at 54.5,35.5) ---
-    page.evaluate("window.UW.walkTo(54.5, 35.0)")
+    page.evaluate("window.UW.walkTo(56.5, 35.5)")
     page.wait_for_timeout(400)
     page.keyboard.press("e")
     page.wait_for_timeout(300)
@@ -54,7 +54,7 @@ with sync_playwright() as p:
     check("dialog closes with E", not page.is_visible("#dialog-panel"))
 
     # --- old man at the inn (36,46 -> 36.5,47.5) ---
-    page.evaluate("window.UW.walkTo(36.5, 47.0)")
+    page.evaluate("window.UW.walkTo(38.5, 47.5)")
     page.wait_for_timeout(400)
     page.keyboard.press("e")
     page.wait_for_timeout(300)
@@ -65,7 +65,7 @@ with sync_playwright() as p:
     page.screenshot(path="npc_dialog_oldman.png")
 
     # --- guard at the palace (48,7 -> 48.5,8.5) ---
-    page.evaluate("window.UW.walkTo(48.5, 8.0)")
+    page.evaluate("window.UW.walkTo(50.5, 8.5)")
     page.wait_for_timeout(400)
     page.keyboard.press("e")
     page.wait_for_timeout(300)

@@ -454,7 +454,7 @@ function spawnPortNpcs() {
     const b = portBuildings.find(x => x.id === s.building);
     if (!b) continue;
     const mesh = makeNpcMesh(s.frames[0]);
-    mesh.position.set(b.x + 0.5, 0.4, b.y + 1.5);
+    mesh.position.set(b.x + 2.5, 0.4, b.y + 1.5);   // beside the door, never blocking it
     portScene.add(mesh);
     staticNpcs.push({ mesh, frames: s.frames, kind: s.kind, label: s.label,
                       animT: Math.random() * 0.6, cur: 0 });
@@ -2490,18 +2490,11 @@ function tick() {
       if (d < bestD) { bestD = d; buildingNear = b; }
     }
     if (!inBuilding && !dialogOpen) {
-      const npc = nearestNpc();
-      const bld = buildingNear
-        ? { d: Math.hypot(buildingNear.x + 0.5 - personPos.x, buildingNear.y + 0.5 - personPos.z) }
-        : null;
-      const npcD = npc ? Math.hypot((npc.pos ?? npc.mesh.position).x - personPos.x,
-                                    (npc.pos ?? npc.mesh.position).z - personPos.z) : 99;
-      if (npc && (!bld || npcD <= bld.d)) {
-        showHint(`<span class="key">E</span> talk to ${npc.label ?? 'sailor'}`);
+      if (buildingNear) {
+        showHint(`<span class="key">E</span> enter ${buildingNear.name.replace(/_/g, ' ')}`);
       } else {
-        showHint(buildingNear
-          ? `<span class="key">E</span> enter ${buildingNear.name.replace(/_/g, ' ')}`
-          : null);
+        const npc = nearestNpc();
+        showHint(npc ? `<span class="key">E</span> talk to ${npc.label ?? 'sailor'}` : null);
       }
     } else {
       showHint(null);
