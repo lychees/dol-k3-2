@@ -1769,6 +1769,16 @@ function sinkEnemy() {
   endBattle();
 }
 
+// find a sailable tile near (bx, by); returns [x, z]
+function sailableNear(bx, by) {
+  for (let r = 2; r < 12; r++) {
+    for (const [ox, oz] of [[-r, 0], [r, 0], [0, -r], [0, r], [-r, -r], [-r, r], [r, -r], [r, r]]) {
+      if (sailableAt(bx + ox, by + oz)) return [bx + ox, by + oz];
+    }
+  }
+  return [bx, by];
+}
+
 function shipwreck(reason = 'battle') {
   P.gold = Math.floor(P.gold / 2);
   P.cargo = {};
@@ -1784,16 +1794,8 @@ function shipwreck(reason = 'battle') {
     const d = Math.hypot(p.x - shipPos.x, p.y - shipPos.z);
     if (d < bd) { bd = d; best = p; }
   }
-  for (let r = 2; r < 12; r++) {
-    let ok = false;
-    for (const [ox, oz] of [[-r, 0], [r, 0], [0, -r], [0, r], [-r, -r], [-r, r], [r, -r], [r, r]]) {
-      if (sailableAt(best.x + ox, best.y + oz)) {
-        shipPos.set(best.x + ox, 0.4, best.y + oz);
-        ok = true; break;
-      }
-    }
-    if (ok) break;
-  }
+  const [sx, sz] = sailableNear(best.x, best.y);
+  shipPos.set(sx, 0.4, sz);
   showBanner(reason === 'massacre'
     ? `Your crew was wiped out!<small>half your gold and all cargo lost — you limped to ${best.name}</small>`
     : `Shipwreck!<small>half your gold and all cargo lost — you limped to ${best.name}</small>`);
@@ -2120,12 +2122,104 @@ function onEscapeKey() {
 // ---------------------------------------------------------------------------
 const devPanel = document.getElementById('dev-panel');
 
+const DEV_TABS = [['cheats', 'Cheats'], ['monsters', 'Monsters'], ['mates', 'Mates'],
+                  ['discoveries', 'Discoveries'], ['teleport', 'Teleport']];
+let devTab = 'cheats';
+
 function refreshDevPanel() {
   document.getElementById('dev-gold').value = P.gold;
   document.getElementById('dev-speed').value = P.devSpeed ?? curShip().speed;
   document.getElementById('dev-status').textContent =
     `flagship: ${curShip().name} · fleet: ${P.fleet.length}/5 · speed override: ${P.devSpeed ?? 'off'}`;
+  // tabs
+  const tabs = document.getElementById('dev-tabs');
+  tabs.innerHTML = '';
+  for (const [id, label] of DEV_TABS) {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.className = id === devTab ? 'active' : '';
+    b.onclick = () => { devTab = id; refreshDevPanel(); };
+    tabs.appendChild(b);
+  }
+  const cheats = document.getElementById('dev-cheats');
+  const content = document.getElementById('dev-content');
+  if (devTab === 'cheats') {
+    cheats.style.display = 'block';
+    content.style.display = 'none';
+    return;
+  }
+  cheats.style.display = 'none';
+  content.style.display = 'block';
+  content.innerHTML = DEV_RENDER[devTab]();
+  // draw discovery/monster thumbnails
+  content.querySelectorAll('.disc-thumb').forEach(cv => {
+    const [ix, iy] = cv.dataset.img.split(',').map(Number);
+    const g = cv.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    g.drawImage(discoveryImg, (ix - 1) * 49, (iy - 1) * 49, 49, 49, 0, 0, 49, 49);
+  });
+  // teleport wiring
+  const tp = document.getElementById('dev-tp-go');
+  if (tp) tp.onclick = () => {
+    const pid = +document.getElementById('dev-tp-port').value;
+    const p = ports.find(x => x.id === pid);
+    if (!p) return;
+    endBattle();                       // teleporting shakes off any pursuers
+    if (scene === 'port') setSail();
+    closeAllDevPanels();
+    const [x, z] = sailableNear(p.x, p.y);
+    shipPos.set(x, 0.4, z);
+    if (scene === 'land') { landPerson.visible = false; scene = 'sea'; camDist = 34; }
+    showBanner(`Teleported to ${p.name}`);
+    save();
+  };
 }
+function closeAllDevPanels() { for (const n in PANELS) closePanel(n); }
+
+const DEV_RENDER = {
+  monsters() {
+    let html = `<p>${LAND_MONSTERS.length} wild monsters (strength scales with hero level)</p>`;
+    for (const m of LAND_MONSTERS) {
+      html += `<div class="mate-card"><canvas class="disc-thumb" data-img="${m.img[0]},${m.img[1]}" ` +
+        `width="49" height="49" style="image-rendering:pixelated;border:1px solid #8a6d3b;border-radius:3px"></canvas>` +
+        `<div class="mate-stats"><b>${m.name}</b><br>hp ${m.hp} · atk ${m.atk} · def ${m.def} · ` +
+        `exp ${m.exp} · gold ${m.gold}</div></div>`;
+    }
+    return html;
+  },
+  mates() {
+    let html = `<p>50 mates — found in the bar of their home port</p>`;
+    for (const [id, m] of Object.entries(matesData)) {
+      const home = ports.find(p => p.id === id * 2);
+      const hired = P.mates.includes(+id);
+      html += `<div class="mate-card"><img src="${figureUrl(...m.image)}" alt="">` +
+        `<div class="mate-stats"><b>${m.name}</b>${hired ? ' ★' : ''} · ${m.nation} · lv ${m.lv} · ` +
+        `${home ? home.name : '?'}<br>` +
+        `lead ${m.leadership} seam ${m.seamanship} know ${m.knowledge} int ${m.intuition} ` +
+        `cour ${m.courage} sword ${m.swordplay} luck ${m.luck} · nav ${m.navigation} ` +
+        `gun ${m.gunnery} acc ${m.accounting}</div></div>`;
+    }
+    return html;
+  },
+  discoveries() {
+    let html = `<p>${discoveriesFound.size} / ${villages.length} discovered</p>`;
+    for (const v of villages) {
+      const found = discoveriesFound.has(v.id);
+      html += `<div class="mate-card"><canvas class="disc-thumb" data-img="${v.img[0]},${v.img[1]}" ` +
+        `width="49" height="49" style="image-rendering:pixelated;border:1px solid #8a6d3b;border-radius:3px"></canvas>` +
+        `<div class="mate-stats"><b>${v.name}</b>${found ? ' ★' : ''} · ${fmtLonLat(v.x, v.y)}<br>` +
+        `${v.desc.slice(0, 90)}…</div></div>`;
+    }
+    return html;
+  },
+  teleport() {
+    const opts = ports.map(p => `<option value="${p.id}">${p.name} (${fmtLonLat(p.x, p.y)})</option>`).join('');
+    return `<p>Teleport your fleet to any port's coast.</p>` +
+      `<p><select id="dev-tp-port" style="width:100%;font-size:15px;background:#1a2a4a;color:#ffe9a8;` +
+      `border:1px solid #8a6d3b;border-radius:6px;padding:6px">${opts}</select></p>` +
+      `<p><button id="dev-tp-go">Teleport</button></p>`;
+  },
+};
 
 definePanel('dev', devPanel, { render: refreshDevPanel, onClose: save });
 const toggleDev = () => PANELS.dev.open ? closePanel('dev') : openPanel('dev');

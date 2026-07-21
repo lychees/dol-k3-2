@@ -262,6 +262,14 @@ the uw2ol project, which took them from the original Uncharted Waters 2
   specialty AND the region that pays most for it, excluding home),
   the palace guard (reacts to your title). Wanderers pause while you
   chat. Dialog lines from uw2ol's role.py.
+### 16. 开发者控制台（Dev Console）
+- The dev panel (`` ` ``) is now a tabbed console:
+  **Cheats** (gold, ship speed) · **Monsters** (all 8 wild monsters with
+  art and stats) · **Mates** (all 50 mates with portrait, full stats, home
+  port, hired mark) · **Discoveries** (all 98 sites with art, coords,
+  description, found mark) · **Teleport** (dropdown of all 130 ports,
+  teleports the fleet to the port's nearest sailable coast via the shared
+  `sailableNear` helper, shaking off pursuers).
 ## Key file formats (cheat sheet)
 
 | Data | Format |

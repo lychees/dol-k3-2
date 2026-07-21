@@ -74,10 +74,11 @@
   #mates-cabins .cabin { border: 1px solid #8a6d3b; border-radius: 6px;
                          padding: 6px 10px; background: #141c30; }
   #menu-panel { max-width: 760px; width: 92vw; }
-  #menu-tabs { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap;
-               margin-bottom: 6px; }
-  #menu-tabs button.active { background: #3a4a7a; border-color: #ffd94d; }
-  #menu-content { max-height: 52vh; text-align: left; }
+  #dev-panel { max-width: 760px; width: 92vw; }
+  #dev-tabs { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap;
+              margin-bottom: 6px; }
+  #dev-tabs button.active, #menu-tabs button.active { background: #3a4a7a; border-color: #ffd94d; }
+  #dev-content, #menu-content { max-height: 52vh; text-align: left; }
   .char-portrait { border: 2px solid #8a6d3b; border-radius: 6px; margin: 0 6px;
                    cursor: pointer; background: #0a1428;
                    image-rendering: pixelated; }
@@ -224,17 +225,21 @@
 </div>
 
 <div class="panel" id="dev-panel">
-  <h2>Developer Mode</h2>
-  <p>
-    gold: <input id="dev-gold" type="number" style="width:90px"> <button id="dev-gold-set">set</button>
-    &nbsp; <button id="dev-gold-1m">+1,000,000</button>
-  </p>
-  <p>
-    ship speed: <input id="dev-speed" type="number" step="0.5" style="width:70px"> tiles/s
-    <button id="dev-speed-set">set</button>
-    &nbsp; <button id="dev-speed-reset">reset</button>
-  </p>
-  <p id="dev-status" style="font-size:13px;color:#bba"></p>
+  <h2>Developer Console</h2>
+  <div id="dev-tabs"></div>
+  <div id="dev-cheats">
+    <p>
+      gold: <input id="dev-gold" type="number" style="width:90px"> <button id="dev-gold-set">set</button>
+      &nbsp; <button id="dev-gold-1m">+1,000,000</button>
+    </p>
+    <p>
+      ship speed: <input id="dev-speed" type="number" step="0.5" style="width:70px"> tiles/s
+      <button id="dev-speed-set">set</button>
+      &nbsp; <button id="dev-speed-reset">reset</button>
+    </p>
+    <p id="dev-status" style="font-size:13px;color:#bba"></p>
+  </div>
+  <div id="dev-content" class="datatable" style="display:none"></div>
   <div class="close-hint"><span class="key">`</span> close</div>
 </div>
 
