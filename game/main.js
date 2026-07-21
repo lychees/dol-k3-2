@@ -331,6 +331,7 @@ let P = {
   shipTier: 0, hull: 100, cargo: {}, bank: 0,
   telescope: false, discoveryQuest: null, deliveryQuest: null,
   palaceMilestone: 0, days: 0, discoveries: [], portsFound: [],
+  devSpeed: null,                 // developer-mode ship speed override
 };
 try {
   const s = JSON.parse(localStorage.getItem(SAVE_KEY));
@@ -630,7 +631,8 @@ function renderMarket() {
   document.getElementById('market-info').innerHTML =
     `gold: <b>${P.gold}g</b> &nbsp;·&nbsp; cargo space: <b>${cargoSpace()}</b> / ${SHIPS[P.shipTier].cargo}`;
   const div = document.getElementById('market-table');
-  const rows = marketRows();
+  // only goods sold here, plus whatever the player holds and can sell
+  const rows = marketRows().filter(r => r.buy != null || (P.cargo[r.name] ?? 0) > 0);
   let html = '<table><tr><th>goods</th><th>buy</th><th>sell</th><th>hold</th><th></th></tr>';
   for (const r of rows) {
     const hold = P.cargo[r.name] ?? 0;
@@ -765,10 +767,10 @@ function drawMinimap() {
     mmCtx.fill();
   } else {
     mmCtx.clearRect(0, 0, mm.width, mm.height);
-    mmCtx.drawImage(mmPort, 0, 0, mm.width, mm.width);   // square, centered vertically
+    mmCtx.drawImage(mmPort, 0, 0, mm.width, mm.height);   // stretch to fit — show the whole port
     mmCtx.fillStyle = '#ff4444';
     mmCtx.beginPath();
-    mmCtx.arc(personPos.x / PORT_SIZE * mm.width, personPos.z / PORT_SIZE * mm.width, 3, 0, 7);
+    mmCtx.arc(personPos.x / PORT_SIZE * mm.width, personPos.z / PORT_SIZE * mm.height, 3, 0, 7);
     mmCtx.fill();
   }
 }
@@ -778,10 +780,14 @@ function drawMinimap() {
 // ---------------------------------------------------------------------------
 const keys = {};
 addEventListener('keydown', e => {
+  // typing in dev panel inputs: let Esc/` through (they close panels),
+  // swallow only printable characters so they don't trigger hotkeys
+  if (e.target.tagName === 'INPUT' && e.key.length === 1 && e.key !== '`') return;
   const k = e.key.toLowerCase();
   if (keys[k]) return;              // ignore auto-repeat for one-shot keys
   keys[k] = true;
   if (k === 'm') toggleMusic();
+  if (k === '`') toggleDev();
   if (k === 'e') onUseKey();
   if (k === 'g') onAshoreKey();
   if (k === 'escape') onEscapeKey();
@@ -830,12 +836,50 @@ function onAshoreKey() {
 
 function onEscapeKey() {
   if (discoveryPanel.style.display === 'block') { discoveryPanel.style.display = 'none'; return; }
+  if (devOpen) { toggleDev(); return; }
   if (marketOpen) { closeMarket(); return; }
   if (scene === 'port') {
     if (inBuilding) hideBuildingPanel();
     else setSail();
   }
 }
+
+// ---------------------------------------------------------------------------
+// Developer mode (` to toggle): set gold and ship speed
+// ---------------------------------------------------------------------------
+const devPanel = document.getElementById('dev-panel');
+let devOpen = false;
+
+function refreshDevPanel() {
+  document.getElementById('dev-gold').value = P.gold;
+  document.getElementById('dev-speed').value = P.devSpeed ?? SHIPS[P.shipTier].speed;
+  document.getElementById('dev-status').textContent =
+    `ship: ${SHIPS[P.shipTier].name} · speed override: ${P.devSpeed ?? 'off'}`;
+}
+
+function toggleDev() {
+  devOpen = !devOpen;
+  if (devOpen) { refreshDevPanel(); devPanel.style.display = 'block'; }
+  else { devPanel.style.display = 'none'; save(); }
+}
+
+document.getElementById('dev-gold-set').onclick = () => {
+  P.gold = Math.max(0, Math.floor(+document.getElementById('dev-gold').value || 0));
+  save(); refreshDevPanel();
+};
+document.getElementById('dev-gold-1m').onclick = () => {
+  P.gold += 1000000;
+  save(); refreshDevPanel();
+};
+document.getElementById('dev-speed-set').onclick = () => {
+  const v = +document.getElementById('dev-speed').value;
+  P.devSpeed = v > 0 ? v : null;
+  save(); refreshDevPanel();
+};
+document.getElementById('dev-speed-reset').onclick = () => {
+  P.devSpeed = null;
+  save(); refreshDevPanel();
+};
 
 // ---------------------------------------------------------------------------
 // Music (region-based, following uw2ol's mapping in gui.py)
@@ -990,7 +1034,7 @@ function tick() {
 
   // --- movement input ---
   let dx = 0, dz = 0;
-  const panelOpen = discoveryPanel.style.display === 'block' || inBuilding || marketOpen;
+  const panelOpen = discoveryPanel.style.display === 'block' || inBuilding || marketOpen || devOpen;
   if (started && !panelOpen) {
     if (keys['w'] || keys['arrowup']) dz -= 1;
     if (keys['s'] || keys['arrowdown']) dz += 1;
@@ -1007,7 +1051,7 @@ function tick() {
 
   if (scene === 'sea') {
     // --- ship movement (slide along coasts) ---
-    const curSpeed = SHIPS[P.shipTier].speed * speedFactor();
+    const curSpeed = (P.devSpeed ?? SHIPS[P.shipTier].speed) * speedFactor();
     if (moving) {
       const step = curSpeed * dt;
       const nx = shipPos.x + dx * step, nz = shipPos.z + dz * step;

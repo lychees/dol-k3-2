@@ -120,7 +120,19 @@ Uncharted Waters 2 as an MMO, written in Python/pygame/twisted).
   the 180° roll made sprites face the opposite way (up/down swapped).
   Verified all 4 directions against the sprite sheet.
 
-## Key file formats (cheat sheet)
+### 8. 开发者模式 + 小地图/市场修复
+- **Dev mode** (backquote `` ` `` toggles): set gold (or +1M), override ship
+  speed in tiles/s (persisted as `P.devSpeed`; reset restores ship default).
+  Typing in the inputs doesn't trigger hotkeys (printable chars swallowed,
+  Esc/` pass through so panels still close — fixed a real focus bug where
+  the dev panel couldn't be closed while an input had focus).
+- **Port minimap**: was drawn as 240×240 into a 240×120 canvas — the
+  southern half of every port was cut off. Now stretched to fill the
+  canvas; the whole port and the player dot show correctly (verified with
+  Istanbul, whose city lies in the south).
+- **Market filtering**: goods not sold at the current port no longer
+  clutter the table; rows = locally sold goods (+ specialty) plus anything
+  the player holds and can sell.
 
 | Data | Format |
 |---|---|
@@ -136,3 +148,15 @@ Uncharted Waters 2 as an MMO, written in Python/pygame/twisted).
 All game assets (map data, tiles, sprites, music, images) are extracted from
 the uw2ol project, which took them from the original Uncharted Waters 2
 (Koei, 1993). For non-commercial fan/educational use only.
+
+## Key file formats (cheat sheet)
+
+| Data | Format |
+|---|---|
+| world_map.bin | 2160×1080 bytes, tile id = value (1-based) |
+| portmaps.bin | 101 × (96×96) bytes, tile id = value + 1 |
+| tiles_*.png | 16×8 grid of 16px tiles (256×128) |
+| portchips/*.png | 16×15 grid of 16px tiles (256×240) |
+| ship-tileset.png | 8×4 grid of 32px; row 1 = player ship |
+| person-tileset.png | 32×1 grid of 32px; up 0-1, right 2-3, down 4-5, left 6-7 |
+| discoveries.png | 49px cells, 16×8 grid (785×393) |

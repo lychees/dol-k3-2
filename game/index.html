@@ -89,7 +89,8 @@
   <span class="key">G</span> go ashore &nbsp;
   <span class="key">Esc</span> leave &nbsp;
   <span class="key">wheel</span> zoom &nbsp;
-  <span class="key">M</span> music
+  <span class="key">M</span> music &nbsp;
+  <span class="key">`</span> dev
 </div>
 <canvas id="minimap" width="240" height="120"></canvas>
 
@@ -106,6 +107,21 @@
   <p id="market-info"></p>
   <div id="market-table"></div>
   <div class="close-hint"><span class="key">Esc</span> leave market</div>
+</div>
+
+<div class="panel" id="dev-panel">
+  <h2>Developer Mode</h2>
+  <p>
+    gold: <input id="dev-gold" type="number" style="width:90px"> <button id="dev-gold-set">set</button>
+    &nbsp; <button id="dev-gold-1m">+1,000,000</button>
+  </p>
+  <p>
+    ship speed: <input id="dev-speed" type="number" step="0.5" style="width:70px"> tiles/s
+    <button id="dev-speed-set">set</button>
+    &nbsp; <button id="dev-speed-reset">reset</button>
+  </p>
+  <p id="dev-status" style="font-size:13px;color:#bba"></p>
+  <div class="close-hint"><span class="key">`</span> close</div>
 </div>
 
 <div class="panel" id="discovery-panel">
