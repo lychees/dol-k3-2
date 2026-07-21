@@ -67,6 +67,25 @@ Uncharted Waters 2 as an MMO, written in Python/pygame/twisted).
 - Enabled GitHub Pages (main branch, root); game served at
   https://lychees.github.io/dol-k3-2/game/
 
+### 5. "港口的贴图是不是不太对？也没法访问建筑" (bugfix round)
+- **Building access**: building tiles are unwalkable by design (ids 42/44/46/170);
+  in uw2ol the player stops in front of the door. Fixed the proximity check to
+  trigger on the nearest building within 2 tiles instead of requiring the
+  player to stand ON the (unwalkable) building tile.
+- **Port textures — root cause: off-by-one tile ids**. PORTMAP bytes are
+  0-based (uw2ol does `byte + 1`), but the shader assumed 1-based ids like the
+  world map. Every port tile was drawn as the previous tile (water rendered as
+  beach-edge tiles → the mystery "vertical stripes"). Fixed by uploading a
+  +1-shifted copy of the port map to the DataTexture.
+- **Color fix**: removed `SRGBColorSpace` from tileset textures — the custom
+  ShaderMaterial does not re-encode to sRGB, so decoded-linear output looked
+  dark/over-contrasted. Textures now pass through raw, matching the PNGs.
+- **Filtering**: tilesets use LinearFilter + mipmaps + max anisotropy with a
+  GLSL3 `textureGrad` shader (continuous derivatives, no tile-boundary
+  artifacts); texel-center sampling keeps magnified pixels crisp.
+- Verified on real GPU (RTX 4090) + SwiftShader: Lisbon/Istanbul ports match
+  the PIL ground-truth render; full regression test passed.
+
 ## Key file formats (cheat sheet)
 
 | Data | Format |

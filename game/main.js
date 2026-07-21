@@ -16,6 +16,19 @@ const PORT_WALK_MAX_ASIA = 46;
 const WALK_SPEED = 6;         // tiles per second in port
 
 // ---------------------------------------------------------------------------
+// Renderer / camera (created first: textures need the max anisotropy)
+// ---------------------------------------------------------------------------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+document.getElementById('app').appendChild(renderer.domElement);
+const maxAniso = renderer.capabilities.getMaxAnisotropy();
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 2000);
+let camDist = 34;                       // zoom level (wheel)
+const CAM_TILT = 0.35;                  // radians from vertical
+
+// ---------------------------------------------------------------------------
 // Boot: load all assets, then init
 // ---------------------------------------------------------------------------
 const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, shipTex, personTex] =
@@ -26,8 +39,8 @@ const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, shipTex, pe
     fetch('./assets/port_meta.json').then(r => r.json()),
     fetch('./assets/building_names.json').then(r => r.json()),
     fetch('./assets/villages.json').then(r => r.json()),
-    loadTex('./assets/ship-tileset.png'),
-    loadTex('./assets/person-tileset.png'),
+    loadTex('./assets/ship-tileset.png', false),
+    loadTex('./assets/person-tileset.png', false),
   ]);
 const mapData = new Uint8Array(mapBuf);
 const portMaps = new Uint8Array(portMapBuf);   // 101 maps of 96*96
@@ -38,11 +51,22 @@ await Promise.all(phaseNames.map(async n => {
   phaseTex[n] = await loadTex(`./assets/tiles_${n}.png`);
 }));
 
-function loadTex(url) {
+// Tilesets: raw colors (no sRGB decode — output matches the original PNGs),
+// mipmaps + anisotropy so distant tiles blend instead of moiré-striping.
+// (texel-center sampling in the shader keeps magnified pixels crisp even
+//  with LinearFilter; filtering only kicks in when tiles are minified.)
+// Sprites (filter=false): crisp nearest, no mipmaps.
+function loadTex(url, filter = true) {
   return new Promise((res, rej) => new THREE.TextureLoader().load(url, t => {
-    t.magFilter = THREE.NearestFilter;
-    t.minFilter = THREE.NearestFilter;
-    t.colorSpace = THREE.SRGBColorSpace;
+    if (filter) {
+      t.magFilter = THREE.LinearFilter;
+      t.minFilter = THREE.LinearMipmapLinearFilter;
+      t.generateMipmaps = true;
+      t.anisotropy = maxAniso;
+    } else {
+      t.magFilter = THREE.NearestFilter;
+      t.minFilter = THREE.NearestFilter;
+    }
     res(t);
   }, undefined, rej));
 }
@@ -53,18 +77,6 @@ const sailableAt = (x, z) => {
   if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return false;
   return SAILABLE.has(tileAt(c, r));
 };
-
-// ---------------------------------------------------------------------------
-// Renderer / camera
-// ---------------------------------------------------------------------------
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setSize(innerWidth, innerHeight);
-document.getElementById('app').appendChild(renderer.domElement);
-
-const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 2000);
-let camDist = 34;                       // zoom level (wheel)
-const CAM_TILT = 0.35;                  // radians from vertical
 
 // ---------------------------------------------------------------------------
 // Tilemap shader (shared by world map and port maps)
@@ -85,9 +97,10 @@ function makeTilemapMesh(data, cols, rows, texA, texB, tsCols = TILESET_COLS, ts
   };
 
   const mat = new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3,
     uniforms,
     vertexShader: /* glsl */`
-      varying vec2 vUv;
+      out vec2 vUv;
       void main() {
         vUv = uv;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
@@ -96,20 +109,25 @@ function makeTilemapMesh(data, cols, rows, texA, texB, tsCols = TILESET_COLS, ts
       uniform sampler2D mapData, tilesA, tilesB;
       uniform float blend;
       uniform vec2 mapSize, tilesetSize;
-      varying vec2 vUv;
+      in vec2 vUv;
+      out vec4 fragColor;
 
       vec3 sampleTileset(sampler2D ts, vec2 tileXY, vec2 frac) {
-        float t = texture2D(mapData, vec2((tileXY.x + 0.5) / mapSize.x,
-                                          1.0 - (tileXY.y + 0.5) / mapSize.y)).r * 255.0;
+        float t = texture(mapData, vec2((tileXY.x + 0.5) / mapSize.x,
+                                        1.0 - (tileXY.y + 0.5) / mapSize.y)).r * 255.0;
         float idx = t - 1.0;                       // tile ids start at 1
         float tx = mod(idx, tilesetSize.x);
         float ty = floor(idx / tilesetSize.x);     // row from top
-        // exact texel lookup (nearest), tileset is 16px tiles, flipY = true
+        // exact texel lookup, tileset is 16px tiles, flipY = true
+        vec2 tilesetPx = tilesetSize * 16.0;
         vec2 texel = vec2(tx * 16.0 + floor(frac.x * 16.0) + 0.5,
                           ty * 16.0 + floor((1.0 - frac.y) * 16.0) + 0.5);
-        vec2 uv = vec2(texel.x / (tilesetSize.x * 16.0),
-                       1.0 - texel.y / (tilesetSize.y * 16.0));
-        return texture2D(ts, uv).rgb;
+        vec2 uv = vec2(texel.x / tilesetPx.x, 1.0 - texel.y / tilesetPx.y);
+        // continuous derivatives (frac is smooth within a tile) so the GPU
+        // picks the right mip level / anisotropy — kills moire on dithered tiles
+        vec2 gx = dFdx(vUv) * 16.0 * mapSize / tilesetPx;
+        vec2 gy = dFdy(vUv) * 16.0 * mapSize / tilesetPx;
+        return textureGrad(ts, uv, gx, gy).rgb;
       }
 
       void main() {
@@ -118,7 +136,7 @@ function makeTilemapMesh(data, cols, rows, texA, texB, tsCols = TILESET_COLS, ts
         vec2 frac = fract(pos);
         vec3 a = sampleTileset(tilesA, tileXY, frac);
         vec3 b = sampleTileset(tilesB, tileXY, frac);
-        gl_FragColor = vec4(mix(a, b, blend), 1.0);
+        fragColor = vec4(mix(a, b, blend), 1.0);
       }`,
   });
 
@@ -253,7 +271,9 @@ async function enterPort(pid) {
   // (re)build the port map mesh
   if (portWorld) portScene.remove(portWorld.mesh);
   portData = new Uint8Array(portMaps.buffer, mapIdx * PORT_SIZE * PORT_SIZE, PORT_SIZE * PORT_SIZE);
-  portWorld = makeTilemapMesh(portData, PORT_SIZE, PORT_SIZE, chips.day, chips.day, 16, 15);
+  // PORTMAP bytes are 0-based; the shader expects 1-based tile ids (like the world map)
+  const portDataShifted = portData.map(v => v + 1);
+  portWorld = makeTilemapMesh(portDataShifted, PORT_SIZE, PORT_SIZE, chips.day, chips.day, 16, 15);
   portWorld.chips = chips;
   portScene.add(portWorld.mesh);
 
@@ -671,9 +691,14 @@ function tick() {
       camera.lookAt(48, 0, 48.01);
     }
 
-    // --- standing on a building? ---
-    const pc = Math.floor(personPos.x), pr = Math.floor(personPos.z);
-    buildingNear = portBuildings.find(b => b.x === pc && b.y === pr) ?? null;
+    // --- standing next to a building? (building tiles are unwalkable;
+    //     the player stops in front of the door, like in uw2ol) ---
+    buildingNear = null;
+    let bestD = 2;
+    for (const b of portBuildings) {
+      const d = Math.hypot(b.x + 0.5 - personPos.x, b.y + 0.5 - personPos.z);
+      if (d < bestD) { bestD = d; buildingNear = b; }
+    }
     if (!inBuilding) {
       showHint(buildingNear
         ? `<span class="key">E</span> enter ${buildingNear.name.replace(/_/g, ' ')}`
