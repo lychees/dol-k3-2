@@ -9,7 +9,6 @@ const TILESET_COLS = 16;      // tiles per row in the tileset image
 const TILESET_ROWS = 8;
 const SAILABLE = new Set(Array.from({ length: 32 }, (_, i) => i + 1)); // ids 1..32
 const DAY_LENGTH_SEC = 180;   // one full in-game day
-const SHIP_SPEED = 7;         // tiles per second
 const PORT_SIZE = 96;         // port maps are 96x96 tiles
 const PORT_WALK_MAX = 39;     // walkable port tile ids: 1..39
 const PORT_WALK_MAX_ASIA = 46;
@@ -31,7 +30,7 @@ const CAM_TILT = 0.35;                  // radians from vertical
 // ---------------------------------------------------------------------------
 // Boot: load all assets, then init
 // ---------------------------------------------------------------------------
-const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, shipTex, personTex] =
+const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, shipTex, personTex] =
   await Promise.all([
     fetch('./assets/world_map.bin').then(r => r.arrayBuffer()),
     fetch('./assets/portmaps.bin').then(r => r.arrayBuffer()),
@@ -39,6 +38,7 @@ const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, shipTex, pe
     fetch('./assets/port_meta.json').then(r => r.json()),
     fetch('./assets/building_names.json').then(r => r.json()),
     fetch('./assets/villages.json').then(r => r.json()),
+    fetch('./assets/goods.json').then(r => r.json()),
     loadTex('./assets/ship-tileset.png', false),
     loadTex('./assets/person-tileset.png', false),
   ]);
@@ -315,9 +315,69 @@ function setSail() {
 }
 
 // ---------------------------------------------------------------------------
+// Player state (persisted to localStorage)
+// ---------------------------------------------------------------------------
+const SHIPS = [
+  { name: 'Sloop',   speed: 7,   cargo: 20, hull: 100, price: 0 },
+  { name: 'Caravel', speed: 8.5, cargo: 40, hull: 150, price: 5000 },
+  { name: 'Galleon', speed: 10,  cargo: 80, hull: 220, price: 20000 },
+];
+const TITLES = [[50, 'Duke'], [40, 'Marquis'], [30, 'Earl'], [20, 'Viscount'],
+                [15, 'Baron'], [10, 'Knight'], [5, 'Squire'], [0, '']];
+
+const SAVE_KEY = 'uw-save-v1';
+let P = {
+  gold: 1000, fame: 0, provisions: 100, fatigue: 0,
+  shipTier: 0, hull: 100, cargo: {}, bank: 0,
+  telescope: false, discoveryQuest: null, deliveryQuest: null,
+  palaceMilestone: 0, days: 0, discoveries: [], portsFound: [],
+};
+try {
+  const s = JSON.parse(localStorage.getItem(SAVE_KEY));
+  if (s && typeof s === 'object') P = { ...P, ...s };
+} catch { /* fresh game */ }
+
+// discoveries / found ports live in Sets, mirrored into P on save
+const discoveriesFound = new Set(P.discoveries);
+const discovered = new Set(P.portsFound);
+
+function save() {
+  P.discoveries = [...discoveriesFound];
+  P.portsFound = [...discovered];
+  localStorage.setItem(SAVE_KEY, JSON.stringify(P));
+}
+
+const cargoUsed = () => Object.values(P.cargo).reduce((a, b) => a + b, 0);
+const cargoSpace = () => SHIPS[P.shipTier].cargo - cargoUsed();
+const fameTitle = () => TITLES.find(([n]) => P.fame >= n)[1];
+
+function speedFactor() {
+  if (P.hull <= 0) return 0.25;
+  if (P.provisions <= 0 || P.fatigue >= 90) return 0.5;
+  return 1;
+}
+
+function onNewDay() {
+  P.days++;
+  P.bank = Math.floor(P.bank * 1.02);          // 2% daily interest
+  if (scene === 'sea') {
+    P.provisions = Math.max(0, P.provisions - 8);
+    P.fatigue = Math.min(100, P.fatigue + 12);
+    P.hull = Math.max(0, P.hull - 1);
+    if (P.provisions <= 0) {
+      P.hull = Math.max(0, P.hull - 5);
+      showBanner('Out of provisions!<small>the crew is starving — find a port</small>');
+    }
+  }
+  save();
+}
+
+// ---------------------------------------------------------------------------
 // Buildings
 // ---------------------------------------------------------------------------
 const buildingPanel = document.getElementById('building-panel');
+const buildingText = document.getElementById('building-text');
+const buildingActions = document.getElementById('building-actions');
 const BUILDING_FLAVOR = {
   market: 'Spices, fabrics and goods from distant lands fill the stalls.',
   bar: 'Sailors raise their mugs and swap tales of the sea.',
@@ -333,14 +393,197 @@ const BUILDING_FLAVOR = {
   fortune_house: 'The cards and stars may reveal your fortune.',
 };
 
+// --- building action helpers -------------------------------------------------
+function setBuildingText(t) { buildingText.innerHTML = t; }
+
+function renderActions(menu) {
+  buildingActions.innerHTML = '';
+  for (const item of menu) {
+    const btn = document.createElement('button');
+    btn.textContent = item.label + (item.cost ? ` (${item.cost}g)` : '');
+    btn.disabled = !!item.disabled || (!!item.cost && P.gold < item.cost);
+    btn.onclick = () => { item.action(); save(); renderActions(buildingMenu(inBuilding)); };
+    buildingActions.appendChild(btn);
+  }
+}
+
+const FORTUNES = [
+  'A fair wind fills your sails this week.',
+  'Beware the calm — patience rewards the waiting captain.',
+  'Gold spent on friends is never wasted.',
+  'A discovery awaits you in distant waters.',
+  'The stars favor the bold. Sail far.',
+  'Storm clouds gather, but your ship is sturdy.',
+];
+
+function buildingMenu(b) {
+  if (!b) return [];
+  const ship = SHIPS[P.shipTier];
+  switch (b.name) {
+    case 'harbor': return [
+      { label: 'Buy provisions (fill to 100)', cost: 100 - P.provisions,
+        disabled: P.provisions >= 100,
+        action() { P.gold -= 100 - P.provisions; P.provisions = 100;
+                   setBuildingText('Provisions loaded. The crew is ready.'); } },
+      { label: 'Set sail', action() { setSail(); } },
+    ];
+    case 'market': return [
+      { label: 'Trade goods', action() { openMarket(); } },
+    ];
+    case 'inn': return [
+      { label: 'Rest until morning', cost: 10, action() {
+        P.gold -= 10; P.fatigue = 0; onNewDay();
+        setBuildingText('You sleep soundly. Fatigue washed away — a new day begins.');
+      } },
+    ];
+    case 'bar': return [
+      { label: 'Ask for rumors', cost: 25, action() {
+        P.gold -= 25;
+        const unknown = villages.filter(v => !discoveriesFound.has(v.id));
+        if (!unknown.length) { setBuildingText('"You\'ve seen it all, captain!"'); return; }
+        const v = unknown[Math.floor(Math.random() * unknown.length)];
+        setBuildingText(`"I heard there's something interesting at ${fmtLonLat(v.x, v.y)}… worth a look, captain."`);
+      } },
+    ];
+    case 'dry_dock': {
+      const dmg = ship.hull - P.hull;
+      const menu = [
+        { label: `Repair hull (${P.hull}/${ship.hull})`, cost: dmg * 2, disabled: dmg <= 0,
+          action() { P.gold -= dmg * 2; P.hull = ship.hull;
+                     setBuildingText('Hull patched and caulked. She\'s seaworthy again.'); } },
+      ];
+      if (P.shipTier < SHIPS.length - 1) {
+        const next = SHIPS[P.shipTier + 1];
+        menu.push({ label: `Buy ${next.name} (speed ${next.speed}, cargo ${next.cargo})`, cost: next.price,
+          action() { P.gold -= next.price; P.shipTier++;
+                     P.hull = SHIPS[P.shipTier].hull;
+                     setBuildingText(`The ${next.name} is yours, captain. A fine vessel!`); } });
+      }
+      return menu;
+    }
+    case 'palace': {
+      const next = P.palaceMilestone + 5;
+      return [
+        { label: `Request audience (${discoveriesFound.size}/${next} discoveries)`, disabled: discoveriesFound.size < next,
+          action() {
+            P.palaceMilestone = next;
+            const reward = next * 100;
+            P.gold += reward; P.fame += 2;
+            setBuildingText(`The governor commends your voyages: <b>${fameTitle()}</b>! Royal reward: ${reward}g.`);
+          } },
+        { label: 'Pay respects', action() {
+          setBuildingText(P.fame >= 5
+            ? `"Ah, ${fameTitle()} — we've heard of your deeds." (fame ${P.fame})`
+            : '"Come back when you\'ve made a name for yourself, sailor."');
+        } },
+      ];
+    }
+    case 'job_house': {
+      if (P.deliveryQuest) {
+        const q = P.deliveryQuest;
+        const target = ports.find(p => p.id === q.port);
+        if (q.port === portId) return [
+          { label: `Deliver the letter (+${q.reward}g)`, action() {
+            P.gold += q.reward; P.fame += 3; P.deliveryQuest = null;
+            setBuildingText(`Letter delivered! Payment: ${q.reward}g. The guild thanks you.`);
+          } },
+        ];
+        return [{ label: `Deliver letter to ${target.name} (${fmtLonLat(target.x, target.y)})`, disabled: true,
+                  action() {} }];
+      }
+      return [
+        { label: 'Take a delivery job', action() {
+          // only ports that actually have a job house
+          const others = ports.filter(p => {
+            if (p.id === portId) return false;
+            const m = portMeta[Math.min(p.id, 101)];
+            return m.buildings && m.buildings[7];
+          });
+          const t = others[Math.floor(Math.random() * others.length)];
+          const here = ports.find(p => p.id === portId);
+          const dist = Math.hypot(t.x - here.x, t.y - here.y);
+          const reward = 200 + Math.min(800, Math.floor(dist / 2));
+          P.deliveryQuest = { port: t.id, reward };
+          setBuildingText(`Deliver this letter to the job house in <b>${t.name}</b> (${fmtLonLat(t.x, t.y)}). Reward: ${reward}g.`);
+        } },
+      ];
+    }
+    case 'msc': {
+      if (P.discoveryQuest) {
+        if (discoveriesFound.has(P.discoveryQuest)) {
+          const v = villages.find(x => x.id === P.discoveryQuest);
+          return [
+            { label: `Report: ${v.name} (+600g)`, action() {
+              P.gold += 600; P.fame += 5; P.discoveryQuest = null;
+              setBuildingText(`Astounding — ${v.name}, confirmed! Reward: 600g. The society applauds you.`);
+            } },
+          ];
+        }
+        const v = villages.find(x => x.id === P.discoveryQuest);
+        return [{ label: `Find: ${v.name} (${fmtLonLat(v.x, v.y)})`, disabled: true, action() {} }];
+      }
+      return [
+        { label: 'Take a research quest', action() {
+          const unknown = villages.filter(v => !discoveriesFound.has(v.id));
+          if (!unknown.length) { setBuildingText('"Nothing left to discover, my friend!"'); return; }
+          const v = unknown[Math.floor(Math.random() * unknown.length)];
+          P.discoveryQuest = v.id;
+          setBuildingText(`"I heard there's something interesting at <b>${fmtLonLat(v.x, v.y)}</b>. Would you investigate? Return to any of our halls when you find it."`);
+        } },
+      ];
+    }
+    case 'bank': {
+      return [
+        { label: 'Deposit 100g', action() { const a = Math.min(100, P.gold); P.gold -= a; P.bank += a;
+          setBuildingText(`Balance: ${P.bank}g (2% daily interest).`); }, disabled: P.gold <= 0 },
+        { label: 'Deposit all', action() { P.bank += P.gold; P.gold = 0;
+          setBuildingText(`Balance: ${P.bank}g (2% daily interest).`); }, disabled: P.gold <= 0 },
+        { label: 'Withdraw 100g', action() { const a = Math.min(100, P.bank); P.bank -= a; P.gold += a;
+          setBuildingText(`Balance: ${P.bank}g. Gold in hand: ${P.gold}g.`); }, disabled: P.bank <= 0 },
+        { label: 'Withdraw all', action() { P.gold += P.bank; P.bank = 0;
+          setBuildingText(`Balance: 0g. Gold in hand: ${P.gold}g.`); }, disabled: P.bank <= 0 },
+      ];
+    }
+    case 'item_shop': return [
+      { label: 'Telescope (spot discoveries from afar)', cost: 2000, disabled: P.telescope,
+        action() { P.gold -= 2000; P.telescope = true;
+                   setBuildingText('With the telescope you can spot interesting sites from much farther away.'); } },
+      { label: 'Rations (+50 provisions)', cost: 100, disabled: P.provisions >= 100,
+        action() { P.gold -= 100; P.provisions = Math.min(100, P.provisions + 50);
+                   setBuildingText('Hardtack and salted pork stowed aboard.'); } },
+      { label: 'Lime juice (-50 fatigue)', cost: 300, disabled: P.fatigue <= 0,
+        action() { P.gold -= 300; P.fatigue = Math.max(0, P.fatigue - 50);
+                   setBuildingText('The crew gulps it down. Scurvy kept at bay.'); } },
+    ];
+    case 'church': return [
+      { label: 'Make a donation', cost: 20, action() {
+        P.gold -= 20;
+        const roll = Math.random();
+        if (roll < 0.3) { P.fame += 1; setBuildingText('Your generosity is remembered. (fame +1)'); }
+        else if (roll < 0.6) { P.provisions = Math.min(100, P.provisions + 20);
+          setBuildingText('The sisters share bread with your crew. (provisions +20)'); }
+        else setBuildingText('Peace settles over you. Safe travels, captain.');
+      } },
+    ];
+    case 'fortune_house': return [
+      { label: 'Hear your fortune', cost: 10, action() {
+        P.gold -= 10;
+        if (Math.random() < 0.1) { P.gold += 100;
+          setBuildingText('"Great fortune! A benefactor smiles upon you." (+100g!)'); }
+        else setBuildingText('"' + FORTUNES[Math.floor(Math.random() * FORTUNES.length)] + '"');
+      } },
+    ];
+    default: return [];
+  }
+}
+
 function openBuilding(b) {
   inBuilding = b;
   document.getElementById('building-name').textContent =
     b.name.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
   document.getElementById('building-img').src = `./assets/buildings/${b.name}.png`;
-  document.getElementById('building-text').textContent =
-    (BUILDING_FLAVOR[b.name] ?? 'Welcome!') +
-    (b.id === 4 ? ' (Press Esc twice to set sail.)' : '');
+  setBuildingText(BUILDING_FLAVOR[b.name] ?? 'Welcome!');
+  renderActions(buildingMenu(b));
   buildingPanel.style.display = 'block';
   if (['bar', 'church', 'palace'].includes(b.name)) {
     playMusic(`./assets/music/building/${b.name}.mp3`);
@@ -349,6 +592,7 @@ function openBuilding(b) {
 
 function hideBuildingPanel() {
   buildingPanel.style.display = 'none';
+  closeMarket();
   if (inBuilding && ['bar', 'church', 'palace'].includes(inBuilding.name)) {
     playMusic(portMusicFor(portId));
   }
@@ -356,15 +600,89 @@ function hideBuildingPanel() {
 }
 
 // ---------------------------------------------------------------------------
+// Market
+// ---------------------------------------------------------------------------
+const marketPanel = document.getElementById('market-panel');
+let marketOpen = false;
+
+function marketRows() {
+  const meta = portMeta[Math.min(portId, 101)];
+  const region = meta.region;
+  const table = region ? goodsData.regions[region] : null;
+  const rows = [];
+  if (table) {
+    for (const [name, [buy, sell]] of Object.entries(table.prices)) {
+      rows.push({ name, buy: table.available[name]?.[0] ?? null, sell });
+    }
+  }
+  const spec = goodsData.specialties[portId];
+  if (spec && !rows.find(r => r.name === spec.name)) {
+    const sell = table?.prices[spec.name]?.[1] ?? Math.floor(spec.price * 1.5);
+    rows.push({ name: spec.name, buy: spec.price, sell, special: true });
+  } else if (spec) {
+    const r = rows.find(r => r.name === spec.name);
+    r.buy = spec.price; r.special = true;
+  }
+  return rows.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function renderMarket() {
+  document.getElementById('market-info').innerHTML =
+    `gold: <b>${P.gold}g</b> &nbsp;·&nbsp; cargo space: <b>${cargoSpace()}</b> / ${SHIPS[P.shipTier].cargo}`;
+  const div = document.getElementById('market-table');
+  const rows = marketRows();
+  let html = '<table><tr><th>goods</th><th>buy</th><th>sell</th><th>hold</th><th></th></tr>';
+  for (const r of rows) {
+    const hold = P.cargo[r.name] ?? 0;
+    html += `<tr${r.special ? ' class="specialty"' : ''}><td>${r.name}${r.special ? ' ★' : ''}</td>` +
+      `<td class="num">${r.buy ?? '—'}</td><td class="num">${r.sell}</td><td class="num">${hold}</td><td></td></tr>`;
+  }
+  div.innerHTML = html + '</table>';
+  const trs = div.querySelectorAll('tr');
+  rows.forEach((r, i) => {
+    const td = trs[i + 1].lastChild;
+    const mk = (label, fn, disabled) => {
+      const btn = document.createElement('button');
+      btn.textContent = label; btn.disabled = disabled; btn.onclick = () => { fn(); save(); renderMarket(); };
+      td.appendChild(btn);
+    };
+    if (r.buy != null) {
+      mk('+1', () => { P.gold -= r.buy; P.cargo[r.name] = (P.cargo[r.name] ?? 0) + 1; },
+         P.gold < r.buy || cargoSpace() < 1);
+      mk('+10', () => { P.gold -= r.buy * 10; P.cargo[r.name] = (P.cargo[r.name] ?? 0) + 10; },
+         P.gold < r.buy * 10 || cargoSpace() < 10);
+    }
+    const hold = P.cargo[r.name] ?? 0;
+    if (hold > 0) {
+      mk('-1', () => { P.gold += r.sell; P.cargo[r.name]--; if (!P.cargo[r.name]) delete P.cargo[r.name]; }, false);
+      mk('all', () => { P.gold += r.sell * hold; delete P.cargo[r.name]; }, false);
+    }
+  });
+}
+
+function openMarket() {
+  marketOpen = true;
+  buildingPanel.style.display = 'none';
+  renderMarket();
+  marketPanel.style.display = 'block';
+}
+
+function closeMarket() {
+  if (!marketOpen) return;
+  marketOpen = false;
+  marketPanel.style.display = 'none';
+  if (inBuilding) buildingPanel.style.display = 'block';
+}
+
+// ---------------------------------------------------------------------------
 // Villages / discoveries
 // ---------------------------------------------------------------------------
 const discoveryPanel = document.getElementById('discovery-panel');
-const discoveriesFound = new Set();
 const discoveryImg = new Image();
 discoveryImg.src = './assets/discoveries.png';
 
 function nearestVillage() {
-  let best = null, bestD = 4;
+  let best = null, bestD = P.telescope ? 8 : 4;
   for (const v of villages) {
     const d = Math.hypot(v.x - shipPos.x, v.y - shipPos.z);
     if (d < bestD) { best = v; bestD = d; }
@@ -374,6 +692,8 @@ function nearestVillage() {
 
 function goAshore(v) {
   discoveriesFound.add(v.id);
+  P.fame += 1;
+  save();
   playSfx('./assets/sounds/discover.ogg');
   document.getElementById('discovery-name').textContent = v.name;
   document.getElementById('discovery-text').textContent = v.desc;
@@ -490,6 +810,7 @@ function nearestPort() {
 function onUseKey() {
   if (!started) return;
   if (discoveryPanel.style.display === 'block') { discoveryPanel.style.display = 'none'; return; }
+  if (marketOpen) { closeMarket(); return; }
   if (scene === 'sea') {
     const p = nearestPort();
     if (p) enterPort(p.id);
@@ -509,6 +830,7 @@ function onAshoreKey() {
 
 function onEscapeKey() {
   if (discoveryPanel.style.display === 'block') { discoveryPanel.style.display = 'none'; return; }
+  if (marketOpen) { closeMarket(); return; }
   if (scene === 'port') {
     if (inBuilding) hideBuildingPanel();
     else setSail();
@@ -629,6 +951,10 @@ window.UW = {
   walkTo: (x, z) => { personPos.x = x; personPos.z = z; },
   getMusic: () => audio.dataset.cur,
   getSfx: () => sfx.src,
+  P,                                        // player state (gold, cargo, ...)
+  save,
+  openBuilding: b => openBuilding(b),
+  reset: () => { localStorage.removeItem(SAVE_KEY); location.reload(); },
 };
 
 document.getElementById('start-overlay').addEventListener('click', function () {
@@ -643,7 +969,9 @@ function tick() {
   const dt = Math.min(clock.getDelta(), 0.1);
 
   // --- day/night cycle (shared) ---
+  const prevGameTime = gameTime;
   gameTime = (gameTime + dt) % DAY_LENGTH_SEC;
+  if (started && gameTime < prevGameTime) onNewDay();   // day wrapped
   const t = gameTime / DAY_LENGTH_SEC;            // 0..1
   const seg = Math.floor(t * 4);                  // current phase
   const segT = t * 4 - seg;
@@ -662,7 +990,7 @@ function tick() {
 
   // --- movement input ---
   let dx = 0, dz = 0;
-  const panelOpen = discoveryPanel.style.display === 'block' || inBuilding;
+  const panelOpen = discoveryPanel.style.display === 'block' || inBuilding || marketOpen;
   if (started && !panelOpen) {
     if (keys['w'] || keys['arrowup']) dz -= 1;
     if (keys['s'] || keys['arrowdown']) dz += 1;
@@ -679,8 +1007,9 @@ function tick() {
 
   if (scene === 'sea') {
     // --- ship movement (slide along coasts) ---
+    const curSpeed = SHIPS[P.shipTier].speed * speedFactor();
     if (moving) {
-      const step = SHIP_SPEED * dt;
+      const step = curSpeed * dt;
       const nx = shipPos.x + dx * step, nz = shipPos.z + dz * step;
       if (sailableAt(nx, nz)) { shipPos.x = nx; shipPos.z = nz; }
       else if (sailableAt(nx, shipPos.z)) shipPos.x = nx;
@@ -707,9 +1036,9 @@ function tick() {
 
     // --- HUD ---
     hudTop.innerHTML =
-      `<b>${fmtLonLat(shipPos.x, shipPos.z)}</b><br>` +
-      `time: ${a}<br>` +
-      `speed: ${moving ? (SHIP_SPEED * 1.8).toFixed(1) : '0.0'} knots`;
+      `<b>${fmtLonLat(shipPos.x, shipPos.z)}</b> · day ${P.days}<br>` +
+      `time: ${a} · speed: ${moving ? (curSpeed * 1.8).toFixed(1) : '0.0'} kn<br>` +
+      `gold: ${P.gold}g · food: ${P.provisions} · vigor: ${100 - P.fatigue} · hull: ${P.hull}`;
   } else {
     // --- walk in port ---
     if (moving) {
@@ -752,9 +1081,9 @@ function tick() {
     // --- HUD ---
     const portName = ports.find(p => p.id === portId)?.name ?? '';
     hudTop.innerHTML =
-      `<b>${portName}</b><br>` +
-      `time: ${a}<br>` +
-      `buildings: ${portBuildings.length}`;
+      `<b>${portName}</b> · day ${P.days}<br>` +
+      `time: ${a} · gold: ${P.gold}g<br>` +
+      `fame: ${P.fame}${fameTitle() ? ' · ' + fameTitle() : ''} · ${SHIPS[P.shipTier].name}`;
   }
 
   // --- banner fade ---
@@ -782,8 +1111,5 @@ function tick() {
 
   renderer.render(scene === 'sea' ? seaScene : portScene, camera);
 }
-
-// --- ports discovered so far (sea) ---
-const discovered = new Set();
 
 tick();

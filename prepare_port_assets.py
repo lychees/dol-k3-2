@@ -109,5 +109,26 @@ for m in ['bar.mp3', 'church.mp3', 'palace.mp3']:
     shutil.copy(f'{UW}/assets/sounds/music/building/{m}', f'{OUT}/music/building/{m}')
 shutil.copy(f'{UW}/assets/sounds/effect/discover.ogg', f'{OUT}/sounds/discover.ogg')
 shutil.copy(f'{UW}/assets/sounds/effect/wave.ogg', f'{OUT}/sounds/wave.ogg')
-print('music copied')
+# --- 8. trade goods: per-region price tables + port specialties -------------
+from hashes.hash_markets_price_details import hash_markets_price_details
+from hashes.hash_special_goods import hash_special_goods
+
+goods = {}
+for econ_id, table in hash_markets_price_details.items():
+    if not isinstance(table, dict) or 'Available_items' not in table:
+        continue
+    region = MARKETS[econ_id]
+    table = {k: v for k, v in table.items()
+             if isinstance(v, list) and len(v) == 2 and isinstance(v[0], (int, float))}
+    available = {k: v for k, v in table.items() if v[0] > 0}
+    goods[region] = {'available': available, 'prices': table}
+
+specialties = {}
+for pid, s in hash_special_goods.items():
+    if s.get('specialty') and s['specialty'] != '0':
+        specialties[int(pid)] = {'name': s['specialty'], 'price': s['price']}
+
+with open(f'{OUT}/goods.json', 'w') as f:
+    json.dump({'regions': goods, 'specialties': specialties}, f)
+print('goods.json:', len(goods), 'regions,', len(specialties), 'specialties')
 print('DONE')

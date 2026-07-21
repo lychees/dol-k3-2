@@ -86,6 +86,25 @@ Uncharted Waters 2 as an MMO, written in Python/pygame/twisted).
 - Verified on real GPU (RTX 4090) + SwiftShader: Lisbon/Istanbul ports match
   the PIL ground-truth render; full regression test passed.
 
+### 7. 港口建筑交互（完整游戏循环）
+- **Player state** (localStorage `uw-save-v1`): gold, fame+title
+  (Squire…Duke), provisions/fatigue/hull (drain at sea per in-game day,
+  penalties at 0), ship tiers (Sloop/Caravel/Galleon: speed/cargo/hull),
+  cargo hold, bank balance (2% daily interest), telescope, quests,
+  discoveries — all persisted.
+- **Trade economy** straight from uw2ol data: 13 regional price tables
+  (~46 goods each, `[buy, sell]`, 0 = not sold locally) + 67 port
+  specialties (cheap at origin). Classic buy-low-sell-high.
+- **All 12 buildings interactive**:
+  harbor (provisions, set sail) · market (trade UI) · inn (rest) ·
+  bar (discovery rumors) · dry_dock (repair, buy ships) ·
+  palace (fame milestones → royal rewards) · job_house (delivery quests,
+  targets filtered to ports that have a job house) · msc (discovery
+  research quests, uw2ol-style) · bank (deposit/withdraw + interest) ·
+  item_shop (telescope/rations/lime juice) · church (donation blessings) ·
+  fortune_house (fortunes, rare jackpot)
+- 21 automated checks (full quest cycles, trading math, persistence)
+  + regression suite — all passing.
 ### 6. 区域 BGM + 发现音效 + 方向修复
 - **Regional BGM** (uw2ol's mapping from gui.py): exported `region` per port
   (economyId → markets list). Port music: 6 capital themes (Lisbon/Seville/
