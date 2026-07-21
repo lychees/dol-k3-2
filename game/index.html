@@ -70,9 +70,21 @@
                    border: 1px solid #8a6d3b; border-radius: 3px; background: #000; margin: 0; }
   .mate-card .mate-stats { flex: 1; font-size: 13px; line-height: 1.5; }
   #mates-cabins { display: flex; gap: 8px; justify-content: center; margin: 8px 0 4px;
-                  font-size: 13px; }
+                  font-size: 13px; flex-wrap: wrap; }
   #mates-cabins .cabin { border: 1px solid #8a6d3b; border-radius: 6px;
                          padding: 6px 10px; background: #141c30; }
+  #menu-panel { max-width: 760px; width: 92vw; }
+  #menu-tabs { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap;
+               margin-bottom: 6px; }
+  #menu-tabs button.active { background: #3a4a7a; border-color: #ffd94d; }
+  #menu-content { max-height: 52vh; text-align: left; }
+  .char-portrait { border: 2px solid #8a6d3b; border-radius: 6px; margin: 0 6px;
+                   cursor: pointer; background: #0a1428;
+                   image-rendering: pixelated; }
+  .char-portrait.selected, .char-portrait:hover { border-color: #ffd94d;
+                   box-shadow: 0 0 10px rgba(255,217,77,.5); }
+  #char-select { margin: 10px 0 4px; }
+  #char-name { color: #ffd94d; font-size: 17px; margin-top: 4px; }
 
   #battle-hud { position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
                 z-index: 6; display: none; text-align: center; color: #fff;
@@ -117,6 +129,7 @@
   <span class="key">Esc</span> leave &nbsp;
   <span class="key">wheel</span> zoom &nbsp;
   <span class="key">M</span> music &nbsp;
+  <span class="key">I</span> log &nbsp;
   <span class="key">`</span> dev
 </div>
 <canvas id="minimap" width="240" height="120"></canvas>
@@ -156,6 +169,13 @@
   <div id="mates-cabins"></div>
   <div id="mates-table" class="datatable"></div>
   <div class="close-hint"><span class="key">Esc</span> leave</div>
+</div>
+
+<div class="panel" id="menu-panel">
+  <h2 id="menu-title">Captain's Log</h2>
+  <div id="menu-tabs"></div>
+  <div id="menu-content" class="datatable"></div>
+  <div class="close-hint"><span class="key">I</span>/<span class="key">Esc</span> close</div>
 </div>
 
 <div id="battle-hud">
@@ -201,6 +221,8 @@
     <span class="key">E</span> enter port or building &mdash;
     <span class="key">G</span> go ashore
   </div>
+  <div id="char-select"></div>
+  <div id="char-name"></div>
   <div class="go">⚓ Click to set sail ⚓</div>
 </div>
 

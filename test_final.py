@@ -14,7 +14,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(2500)
     page.screenshot(path="final_title.png")
 
-    page.click("#start-overlay")
+    page.click("#start-overlay .go")
     page.wait_for_timeout(800)
     hud = page.inner_text("#hud-top").replace("\n", " | ")
     print("HUD at start (expect ~38.8N 10.1W, Lisbon):", hud)

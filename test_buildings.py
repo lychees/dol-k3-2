@@ -21,7 +21,7 @@ with sync_playwright() as p:
     page.evaluate("localStorage.clear()")
     page.reload()
     page.wait_for_timeout(2500)
-    page.click("#start-overlay")
+    page.click("#start-overlay .go")
     page.wait_for_timeout(500)
 
     def open_bld(name):
@@ -143,16 +143,15 @@ with sync_playwright() as p:
     # --- dry_dock: repair + buy ship (via shipyard) ---
     page.evaluate("window.UW.enterPort(1)")
     page.wait_for_timeout(1000)
-    page.evaluate("window.UW.P.hull = 30; window.UW.P.gold = 30000; window.UW.save()")
+    page.evaluate("window.UW.P.fleet[0].hull = 30; window.UW.P.gold = 30000; window.UW.save()")
     open_bld("dry_dock")
     click_btn("Repair hull")
-    check("hull repaired", page.evaluate("window.UW.P.hull") == 60)   # Balsa hull
+    check("hull repaired", page.evaluate("window.UW.P.fleet[0].hull") == 60)   # Balsa hull
     click_btn("Buy a new ship")
     page.wait_for_timeout(400)
     page.click("#shipyard-table tr:has-text('Sloop') button:has-text('buy')")
     page.wait_for_timeout(300)
-    check("bought Sloop via shipyard", page.evaluate("window.UW.P.ship") == "Sloop"
-          and page.evaluate("window.UW.P.hull") == 100)
+    check("bought Sloop via shipyard", page.evaluate("window.UW.P.fleet.some(f => f.ship === 'Sloop')"))
     page.keyboard.press("Escape"); page.wait_for_timeout(200)
     page.keyboard.press("Escape"); page.wait_for_timeout(200)
 
@@ -177,7 +176,7 @@ with sync_playwright() as p:
     page.reload()
     page.wait_for_timeout(2500)
     check("save persists (Sloop, telescope)",
-          page.evaluate("window.UW.P.ship") == "Sloop" and page.evaluate("window.UW.P.telescope") == True)
+          page.evaluate("window.UW.P.fleet.some(f => f.ship === 'Sloop')") and page.evaluate("window.UW.P.telescope") == True)
 
     page.screenshot(path="bld_market.png") if False else None
     print("ERRORS:", errors if errors else "none")

@@ -20,7 +20,7 @@ with sync_playwright() as p:
     page.evaluate("localStorage.clear()")
     page.reload()
     page.wait_for_timeout(2500)
-    page.click("#start-overlay")
+    page.click("#start-overlay .go")
     page.wait_for_timeout(500)
 
     # --- dev mode: gold ---

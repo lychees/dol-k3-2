@@ -184,6 +184,29 @@ the uw2ol project, which took them from the original Uncharted Waters 2
   contact), Figurehead (fatigue -50%, loot +25%), Boarding Planks
   (B captures crippled ships for prize money), Armor Plating
   (damage taken -25%). Tiered items unlock sequentially.
+### 11. 舰队 + 船舱扩展 + 主角 + 信息菜单
+- **Fleet (up to 5 ships)**: P.ship/P.hull refactored to P.fleet[]
+  (flagship = [0]). Cargo = sum, speed = slowest, guns = sum, crew
+  limits = sums. Shipyard: buy adds to fleet, sell at half price,
+  "make flagship" swaps. Old saves migrate.
+- **6 cabin types**: +Lookout (intuition: +0.5 tile discovery sight/pt),
+  +Surgeon (knowledge: -5% fatigue/pt), +Boatswain (seamanship:
+  -5% provisions/pt) alongside Navigator/Gunner/Accountant.
+- **4 protagonists** (João Ferrero / Catalina Erantzo / Otto Baynes /
+  Pietro Conti) with their own walk sprites from person_tileset's 4
+  character blocks; selectable on the start screen.
+- **Captain's Log (I)**: tabbed info menu — Fleet (ships with art,
+  totals), Crew (sailors + cabins + mate cards), Outfit (owned
+  equipment), Hero (protagonist, stats, personal items), Cargo
+  (icons, qty, avg cost), Discoveries (art + descriptions), Quests
+  (MSC/delivery/royal favor progress).
+- Homing cannonballs (fights were decided by misses vs circling
+  enemies); test-only debug hooks (debugHit/hurtEnemy) for
+  deterministic checks in slow headless environments.
+- Root-caused a long debugging session: headless SwiftShader runs rAF
+  unthrottled making wall-clock-dependent tests flaky — game logic
+  (2.5s cooldowns etc.) was correct all along (proven via fireBall
+  instrumentation).
 ## Key file formats (cheat sheet)
 
 | Data | Format |

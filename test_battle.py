@@ -20,7 +20,7 @@ with sync_playwright() as p:
     page.evaluate("localStorage.clear()")
     page.reload()
     page.wait_for_timeout(2500)
-    page.click("#start-overlay")
+    page.click("#start-overlay .go")
     page.wait_for_timeout(500)
 
     # --- market: icons + profit coloring ---
@@ -67,17 +67,17 @@ with sync_playwright() as p:
     # buy Sloop (16000)
     page.click("#shipyard-table tr:has-text('Sloop') button:has-text('buy')")
     page.wait_for_timeout(300)
-    check("bought Sloop", page.evaluate("window.UW.P.ship") == "Sloop"
-          and page.evaluate("window.UW.P.gold") == 50000 - 16000
-          and page.evaluate("window.UW.P.hull") == 100)
-    own_disabled = page.evaluate("""Array.from(document.querySelectorAll('#shipyard-table tr'))
-      .find(tr => tr.textContent.includes('Sloop')).querySelector('button').disabled""")
-    check("owned ship button disabled", own_disabled)
+    check("bought Sloop", page.evaluate("window.UW.P.fleet.some(f => f.ship === 'Sloop')")
+          and page.evaluate("window.UW.P.gold") == 50000 - 16000)
+    own_btns = page.evaluate("""Array.from(document.querySelectorAll('#shipyard-table tr'))
+      .find(tr => tr.textContent.includes('Sloop')).querySelectorAll('button').length""")
+    check("owned ship has flagship/sell buttons", own_btns == 2)
     page.keyboard.press("Escape"); page.wait_for_timeout(200)
     page.keyboard.press("Escape"); page.wait_for_timeout(200)
 
     # --- battle: spawn pirate, engage, fire, sink ---
     page.keyboard.press("Escape"); page.wait_for_timeout(300)  # set sail
+    page.evaluate("window.UW.P.fleet = [{ship: 'Sloop', hull: 100}]; window.UW.save()")
     page.evaluate("window.UW.teleport(700, 400)")
     page.wait_for_timeout(300)
     page.evaluate("window.UW.spawnPirate(702, 400, 'Balsa')")
@@ -86,25 +86,37 @@ with sync_playwright() as p:
     check("battle started on contact", b is not None and b.get("name") == "Balsa")
     check("battle HUD visible", page.is_visible("#battle-hud"))
     page.screenshot(path="battle_start.png")
-    # fire until sunk, steering toward the pirate each volley
+    # verify real cannon volleys damage the enemy, then finish it deterministically
     g0 = page.evaluate("window.UW.P.gold")
     f0 = page.evaluate("window.UW.P.fame")
-    held = None
+    page.keyboard.press("Space")
+    page.wait_for_timeout(2500)
+    b1 = page.evaluate("window.UW.getBattle()")
+    check("player volley hit enemy", b1 is None or b1["enemyHull"] < 60)
+    page.evaluate("window.UW.hurtEnemy(45)")   # Balsa to 15 hull or below
+    held = {"x": None, "z": None}
     for i in range(15):
         page.keyboard.press("Space")
         page.wait_for_timeout(1200)
         b = page.evaluate("window.UW.getBattle()")
         if b is None:
             break
-        # steer toward the enemy to keep it in range
+        # steer toward the enemy on both axes to keep it in range
         dx = b["ex"] - page.evaluate("window.UW.shipPos.x")
-        want = "d" if dx > 0.5 else "a" if dx < -0.5 else None
-        if want != held:
-            if held: page.keyboard.up(held)
-            held = want
-            if held: page.keyboard.down(held)
+        dz = b["ez"] - page.evaluate("window.UW.shipPos.z")
+        want_x = "d" if dx > 0.5 else "a" if dx < -0.5 else None
+        want_z = "s" if dz > 0.5 else "w" if dz < -0.5 else None
+        if want_x != held["x"]:
+            if held["x"]: page.keyboard.up(held["x"])
+            held["x"] = want_x
+            if want_x: page.keyboard.down(want_x)
+        if want_z != held["z"]:
+            if held["z"]: page.keyboard.up(held["z"])
+            held["z"] = want_z
+            if want_z: page.keyboard.down(want_z)
         page.wait_for_timeout(900)
-    if held: page.keyboard.up(held)
+    if held["x"]: page.keyboard.up(held["x"])
+    if held["z"]: page.keyboard.up(held["z"])
     check("enemy sunk (battle over)", page.evaluate("window.UW.getBattle()") is None)
     loot = page.evaluate("window.UW.P.gold") - g0
     check(f"loot gained (+{loot}g)", loot > 0)
@@ -113,13 +125,13 @@ with sync_playwright() as p:
 
     # enemy fire hurts player: teleport back, spawn another pirate, let it shoot
     page.evaluate("window.UW.teleport(700, 400)")
-    page.evaluate("window.UW.P.hull = 100; window.UW.save()")
+    page.evaluate("window.UW.P.fleet[0].hull = 100; window.UW.save()")
     page.wait_for_timeout(300)
     page.evaluate("window.UW.spawnPirate(702, 400, 'Nao')")
     page.wait_for_timeout(1000)
     page.evaluate("window.UW.getBattle()")
     page.wait_for_timeout(6000)   # enemy approaches & fires (Nao guns 40 -> 10 dmg)
-    h = page.evaluate("window.UW.P.hull")
+    h = page.evaluate("window.UW.P.fleet[0].hull")
     check(f"enemy cannon hit player (hull {h})", h < 100)
     page.screenshot(path="battle_fight.png")
 

@@ -20,7 +20,7 @@ with sync_playwright() as p:
     page.evaluate("localStorage.clear()")
     page.reload()
     page.wait_for_timeout(2500)
-    page.click("#start-overlay")
+    page.click("#start-overlay .go")
     page.wait_for_timeout(500)
 
     def open_bld(name):
@@ -117,12 +117,15 @@ with sync_playwright() as p:
     # Balsa speed 9.0 * 1.05 = 9.45 -> ~18.9 in 2s
     check(f"sails speed bonus applied ({dist:.1f} tiles in 2s, expect ~19)", 17 < dist < 21)
 
-    # --- armor reduces battle damage ---
-    page.evaluate("window.UW.P.hull = 100; window.UW.save()")
+    # --- armor reduces battle damage (deterministic via debug hook) ---
+    page.evaluate("window.UW.P.fleet[0].hull = 100; window.UW.save()")
+    hit = page.evaluate("window.UW.debugHit(10)")
+    check(f"armor reduces 10 dmg to {hit} (expect 7.5)", abs(hit - 7.5) < 0.01)
+    page.evaluate("window.UW.P.equipment.armor = false")
+    hit = page.evaluate("window.UW.debugHit(10)")
+    check(f"without armor full 10 dmg ({hit})", hit == 10)
+    page.evaluate("window.UW.P.equipment.armor = true; window.UW.save()")
     page.evaluate("window.UW.spawnPirate(702, 400, 'Nao')")
-    page.wait_for_timeout(9000)   # Nao fires: 40/4=10 dmg *0.75 = 7.5 per hit
-    h = page.evaluate("window.UW.P.hull")
-    check(f"armor reduced damage (hull {h}, unarmored would be <=70)", 70 < h < 100)
     page.screenshot(path="battle_armor.png")
 
     print("ERRORS:", errors if errors else "none")

@@ -230,9 +230,11 @@ portScene.add(person);
 const personPos = new THREE.Vector3(48, 0.4, 48);
 let personDir = 'down';
 
+const CHARACTER_NAMES = ['João Ferrero', 'Catalina Erantzo', 'Otto Baynes', 'Pietro Conti'];
+
 function updatePersonSprite() {
   const col = DIRECTION_COL[personDir] + animFrame;
-  personMap.offset.set(col / 32, 0);
+  personMap.offset.set((P.character * 8 + col) / 32, 0);
 }
 
 // port state
@@ -340,9 +342,13 @@ const TITLES = [[50, 'Duke'], [40, 'Marquis'], [30, 'Earl'], [20, 'Viscount'],
 const SAVE_KEY = 'uw-save-v1';
 let P = {
   gold: 1000, fame: 0, provisions: 100, fatigue: 0,
-  ship: 'Balsa', hull: 60, cargo: {}, cargoCost: {}, bank: 0,
-  crew: 5, mates: [], cabins: { navigator: null, gunner: null, accountant: null },
+  fleet: [{ ship: 'Balsa', hull: 60 }],   // up to 5 ships; [0] = flagship
+  cargo: {}, cargoCost: {}, bank: 0,
+  crew: 5, mates: [],
+  cabins: { navigator: null, gunner: null, accountant: null,
+            lookout: null, surgeon: null, boatswain: null },
   equipment: { sails: 0, cannons: 0, ram: false, figurehead: false, boarding: false, armor: false },
+  character: 0,
   telescope: false, discoveryQuest: null, deliveryQuest: null,
   palaceMilestone: 0, days: 0, discoveries: [], portsFound: [],
   devSpeed: null,                 // developer-mode ship speed override
@@ -357,19 +363,34 @@ if (P.shipTier !== undefined) {
   delete P.shipTier;
   P.hull = Math.min(P.hull, shipByName(P.ship).hull);
 }
+// migrate single-ship saves to the fleet
+if (!P.fleet) {
+  P.fleet = [{ ship: P.ship ?? 'Balsa', hull: P.hull ?? 60 }];
+}
+delete P.ship;
+delete P.hull;
 P.cargoCost = P.cargoCost ?? {};
 
-const curShip = () => shipByName(P.ship);
+const flag = () => P.fleet[0];                      // flagship
+const curShip = () => shipByName(flag().ship);      // flagship's type
+const fleetCargoCap = () => P.fleet.reduce((a, f) => a + shipByName(f.ship).cargo, 0);
+const fleetGuns = () => P.fleet.reduce((a, f) => a + shipByName(f.ship).guns, 0);
+const fleetMinCrew = () => P.fleet.reduce((a, f) => a + shipByName(f.ship).minCrew, 0);
+const fleetMaxCrew = () => P.fleet.reduce((a, f) => a + shipByName(f.ship).maxCrew, 0);
+const fleetSpeed = () => Math.min(...P.fleet.map(f => shipByName(f.ship).speed));
 
 // --- mates / cabins / equipment bonuses --------------------------------------
 const cabinMate = slot => P.cabins[slot] ? matesData[P.cabins[slot]] : null;
 const navBonus = () => 1 + (cabinMate('navigator')?.navigation ?? 0) * 0.05;
 const accBonus = () => 1 + (cabinMate('accountant')?.accounting ?? 0) * 0.05;
+const lookoutRange = () => (cabinMate('lookout')?.intuition ?? 0) * 0.5;
+const surgeonFactor = () => 1 - (cabinMate('surgeon')?.knowledge ?? 0) * 0.05;
+const boatswainFactor = () => 1 - (cabinMate('boatswain')?.seamanship ?? 0) * 0.05;
 const sailBonus = () => 1 + [0, 0.05, 0.1, 0.15][P.equipment.sails];
 const CANNON_MULT = [1, 1.3, 1.6, 2];
 const gunBonus = () => (1 + (cabinMate('gunner')?.gunnery ?? 0) * 0.1) * CANNON_MULT[P.equipment.cannons];
-const crewOk = () => P.crew >= curShip().minCrew;
-const battleDmg = () => curShip().guns / 4 * gunBonus() * (crewOk() ? 1 : 0.5);
+const crewOk = () => P.crew >= fleetMinCrew();
+const battleDmg = () => fleetGuns() / 4 * gunBonus() * (crewOk() ? 1 : 0.5);
 
 // figure portrait: 65x81 cell from figures.png
 const figuresImg = new Image();
@@ -393,11 +414,11 @@ function save() {
 }
 
 const cargoUsed = () => Object.values(P.cargo).reduce((a, b) => a + b, 0);
-const cargoSpace = () => curShip().cargo - cargoUsed();
+const cargoSpace = () => fleetCargoCap() - cargoUsed();
 const fameTitle = () => TITLES.find(([n]) => P.fame >= n)[1];
 
 function speedFactor() {
-  if (P.hull <= 0) return 0.25;
+  if (flag().hull <= 0) return 0.25;
   if (P.provisions <= 0 || P.fatigue >= 90) return 0.5;
   return 1;
 }
@@ -406,11 +427,11 @@ function onNewDay() {
   P.days++;
   P.bank = Math.floor(P.bank * 1.02);          // 2% daily interest
   if (scene === 'sea') {
-    P.provisions = Math.max(0, P.provisions - 8);
-    P.fatigue = Math.min(100, P.fatigue + 12 * (P.equipment.figurehead ? 0.5 : 1));
-    P.hull = Math.max(0, P.hull - 1);
+    P.provisions = Math.max(0, P.provisions - 8 * boatswainFactor());
+    P.fatigue = Math.min(100, P.fatigue + 12 * (P.equipment.figurehead ? 0.5 : 1) * surgeonFactor());
+    flag().hull = Math.max(0, flag().hull - 1);
     if (P.provisions <= 0) {
-      P.hull = Math.max(0, P.hull - 5);
+      flag().hull = Math.max(0, flag().hull - 5);
       showBanner('Out of provisions!<small>the crew is starving — find a port</small>');
     }
   }
@@ -492,18 +513,18 @@ function buildingMenu(b) {
           const v = unknown[Math.floor(Math.random() * unknown.length)];
           setBuildingText(`"I heard there's something interesting at ${fmtLonLat(v.x, v.y)}… worth a look, captain."`);
         } },
-        { label: `Hire sailors +10 (${P.crew}/${ship.maxCrew})`, cost: 1000,
-          disabled: P.crew >= ship.maxCrew,
+        { label: `Hire sailors +10 (${P.crew}/${fleetMaxCrew()})`, cost: 1000,
+          disabled: P.crew >= fleetMaxCrew(),
           action() {
-            const n = Math.min(10, ship.maxCrew - P.crew);
+            const n = Math.min(10, fleetMaxCrew() - P.crew);
             P.gold -= n * 100; P.crew += n;
-            setBuildingText(`${n} sturdy sailors join your crew. (${P.crew}/${ship.maxCrew})`);
+            setBuildingText(`${n} sturdy sailors join your crew. (${P.crew}/${fleetMaxCrew()})`);
           } },
-        { label: 'Dismiss sailors -10', disabled: P.crew <= ship.minCrew,
+        { label: 'Dismiss sailors -10', disabled: P.crew <= fleetMinCrew(),
           action() {
-            const n = Math.min(10, P.crew - ship.minCrew);
+            const n = Math.min(10, P.crew - fleetMinCrew());
             P.crew -= n;
-            setBuildingText(`${n} sailors take their pay and leave. (${P.crew}/${ship.maxCrew})`);
+            setBuildingText(`${n} sailors take their pay and leave. (${P.crew}/${fleetMaxCrew()})`);
           } },
       ];
       // this port's mate (uw2ol: even 1-based port id -> mate id = portId/2)
@@ -534,10 +555,10 @@ function buildingMenu(b) {
       return menu;
     }
     case 'dry_dock': {
-      const dmg = ship.hull - P.hull;
+      const dmg = ship.hull - flag().hull;
       return [
-        { label: `Repair hull (${P.hull}/${ship.hull})`, cost: dmg * 2, disabled: dmg <= 0,
-          action() { P.gold -= dmg * 2; P.hull = ship.hull;
+        { label: `Repair hull (${flag().hull}/${ship.hull})`, cost: dmg * 2, disabled: dmg <= 0,
+          action() { P.gold -= dmg * 2; flag().hull = ship.hull;
                      setBuildingText('Hull patched and caulked. She\'s seaworthy again.'); } },
         { label: 'Buy a new ship', action() { openShipyard(); } },
         { label: 'Outfit ship', action() { openOutfit(); } },
@@ -833,11 +854,11 @@ let shipyardOpen = false;
 
 function renderShipyard() {
   document.getElementById('shipyard-info').innerHTML =
-    `gold: <b>${P.gold}g</b> &nbsp;·&nbsp; current ship: <b>${P.ship}</b>`;
+    `gold: <b>${P.gold}g</b> &nbsp;·&nbsp; fleet: <b>${P.fleet.length}/5</b> ships`;
   const div = document.getElementById('shipyard-table');
   let html = '<table><tr><th></th><th>ship</th><th>speed</th><th>cargo</th><th>hull</th><th>guns</th><th>price</th><th></th></tr>';
   for (const s of SHIPS) {
-    const own = s.name === P.ship;
+    const own = P.fleet.some(f => f.ship === s.name);
     html += `<tr><td><img class="ship-img" src="./assets/ships/${s.name.toLowerCase()}.png" alt=""></td>` +
       `<td>${s.name}${own ? ' ★' : ''}</td>` +
       `<td class="num">${s.speed.toFixed(1)}</td><td class="num">${s.cargo}</td>` +
@@ -848,17 +869,42 @@ function renderShipyard() {
   const trs = div.querySelectorAll('tr');
   SHIPS.forEach((s, i) => {
     const td = trs[i + 1].lastChild;
-    const btn = document.createElement('button');
-    btn.textContent = s.name === P.ship ? 'owned' : 'buy';
-    btn.disabled = s.name === P.ship || P.gold < s.price || cargoUsed() > s.cargo;
-    btn.title = cargoUsed() > s.cargo ? 'your cargo does not fit' : '';
-    btn.onclick = () => {
-      P.gold -= s.price;
-      P.ship = s.name;
-      P.hull = s.hull;
-      save(); renderShipyard();
-    };
-    td.appendChild(btn);
+    const ownedIdx = P.fleet.findIndex(f => f.ship === s.name);
+    if (ownedIdx >= 0) {
+      // set as flagship / sell
+      const fb = document.createElement('button');
+      fb.textContent = ownedIdx === 0 ? 'flagship' : 'make flagship';
+      fb.disabled = ownedIdx === 0;
+      fb.onclick = () => {
+        const [f] = P.fleet.splice(ownedIdx, 1);
+        P.fleet.unshift(f);
+        save(); renderShipyard();
+      };
+      td.appendChild(fb);
+      const sb = document.createElement('button');
+      sb.textContent = 'sell';
+      const capWithout = fleetCargoCap() - s.cargo;
+      sb.disabled = P.fleet.length <= 1 || cargoUsed() > capWithout;
+      sb.title = P.fleet.length <= 1 ? 'your last ship' :
+                 cargoUsed() > capWithout ? 'cargo would not fit' : `+${Math.floor(s.price / 2)}g`;
+      sb.onclick = () => {
+        P.gold += Math.floor(s.price / 2);
+        P.fleet.splice(ownedIdx, 1);
+        save(); renderShipyard();
+      };
+      td.appendChild(sb);
+    } else {
+      const btn = document.createElement('button');
+      btn.textContent = 'buy';
+      btn.disabled = P.gold < s.price || P.fleet.length >= 5 || cargoUsed() > fleetCargoCap() + s.cargo;
+      btn.title = P.fleet.length >= 5 ? 'fleet is full (5 ships)' : '';
+      btn.onclick = () => {
+        P.gold -= s.price;
+        P.fleet.push({ ship: s.name, hull: s.hull });
+        save(); renderShipyard();
+      };
+      td.appendChild(btn);
+    }
   });
 }
 
@@ -883,11 +929,14 @@ const matesPanel = document.getElementById('mates-panel');
 let matesOpen = false;
 const CABINS = [['navigator', 'Navigator', '+5% speed / pt'],
                 ['gunner', 'Gunner', '+10% damage / pt'],
-                ['accountant', 'Accountant', '+5% sell price / pt']];
+                ['accountant', 'Accountant', '+5% sell / pt'],
+                ['lookout', 'Lookout', '+0.5 sight / pt'],
+                ['surgeon', 'Surgeon', '-5% fatigue / pt'],
+                ['boatswain', 'Boatswain', '-5% food / pt']];
 
 function renderMates() {
   document.getElementById('mates-info').innerHTML =
-    `sailors: <b>${P.crew}</b>/${curShip().maxCrew} &nbsp;·&nbsp; mates: <b>${P.mates.length}</b>`;
+    `sailors: <b>${P.crew}</b>/${fleetMaxCrew()} &nbsp;·&nbsp; mates: <b>${P.mates.length}</b>`;
   const cab = document.getElementById('mates-cabins');
   cab.innerHTML = '';
   for (const [slot, label, desc] of CABINS) {
@@ -1024,6 +1073,135 @@ function closeOutfit() {
 }
 
 // ---------------------------------------------------------------------------
+// Captain's Log (I): fleet / crew / outfit / hero / cargo / discoveries / quests
+// ---------------------------------------------------------------------------
+const menuPanel = document.getElementById('menu-panel');
+let menuOpen = false;
+let menuTab = 'fleet';
+const MENU_TABS = [['fleet', 'Fleet'], ['crew', 'Crew'], ['outfit', 'Outfit'],
+                   ['hero', 'Hero'], ['cargo', 'Cargo'], ['discoveries', 'Discoveries'],
+                   ['quests', 'Quests']];
+
+const MENU_RENDER = {
+  fleet() {
+    let html = '<table><tr><th></th><th>ship</th><th>hull</th><th>cargo</th><th>guns</th><th>crew</th><th>role</th></tr>';
+    P.fleet.forEach((f, i) => {
+      const s = shipByName(f.ship);
+      html += `<tr><td><img class="ship-img" src="./assets/ships/${s.name.toLowerCase()}.png" alt=""></td>` +
+        `<td>${s.name}</td><td class="num">${Math.ceil(f.hull)}/${s.hull}</td>` +
+        `<td class="num">${s.cargo}</td><td class="num">${s.guns}</td>` +
+        `<td class="num">${s.minCrew}-${s.maxCrew}</td><td>${i === 0 ? 'flagship ★' : ''}</td></tr>`;
+    });
+    return html + `</table><p>total cargo: ${fleetCargoCap()} · total guns: ${fleetGuns()} · ` +
+           `sailors: ${P.crew}/${fleetMaxCrew()} (min ${fleetMinCrew()}) · fleet: ${P.fleet.length}/5</p>`;
+  },
+  crew() {
+    let html = `<p>sailors: <b>${P.crew}</b>/${fleetMaxCrew()} (minimum ${fleetMinCrew()})</p><p>` +
+      CABINS.map(([slot, label]) => `<b>${label}</b>: ${cabinMate(slot)?.name ?? '—'}`).join(' · ') + '</p>';
+    if (!P.mates.length) return html + '<p>No mates yet — meet them in bars.</p>';
+    for (const id of P.mates) {
+      const m = matesData[id];
+      html += `<div class="mate-card"><img src="${figureUrl(...m.image)}" alt="">` +
+        `<div class="mate-stats"><b>${m.name}</b> · ${m.nation} · lv ${m.lv}<br>` +
+        `lead ${m.leadership} seam ${m.seamanship} know ${m.knowledge} int ${m.intuition} ` +
+        `cour ${m.courage} sword ${m.swordplay} luck ${m.luck}<br>` +
+        `nav ${m.navigation} gun ${m.gunnery} acc ${m.accounting}</div></div>`;
+    }
+    return html;
+  },
+  outfit() {
+    let rows = '';
+    for (const item of OUTFIT_ITEMS) {
+      if (item.tiers) {
+        item.tiers.forEach((t, i) => {
+          if (P.equipment[item.key] > i) rows += `<tr><td>${t.name}</td><td>${t.desc}</td></tr>`;
+        });
+      } else if (P.equipment[item.key]) {
+        rows += `<tr><td>${item.name}</td><td>${item.desc}</td></tr>`;
+      }
+    }
+    return rows ? `<table><tr><th>equipment</th><th>effect</th></tr>${rows}</table>`
+                : '<p>No equipment yet — visit a dry dock to outfit your ship.</p>';
+  },
+  hero() {
+    return `<p><b>${CHARACTER_NAMES[P.character]}</b>${fameTitle() ? ' · ' + fameTitle() : ''}</p>` +
+      `<p>fame: ${P.fame} · gold: ${P.gold}g · bank: ${P.bank}g · days: ${P.days}</p>` +
+      `<p>provisions: ${Math.floor(P.provisions)} · vigor: ${100 - Math.floor(P.fatigue)}</p>` +
+      `<h3 style="color:#ffd94d;margin:8px 0 2px">personal items</h3>` +
+      `<p>${P.telescope ? '★ Telescope — discovery sight x2' : 'no special items yet (try the item shop)'}</p>`;
+  },
+  cargo() {
+    const names = Object.keys(P.cargo);
+    if (!names.length) return '<p>Cargo hold is empty — buy goods at a market.</p>';
+    let html = `<p>space: ${cargoUsed()}/${fleetCargoCap()}</p>` +
+      '<table><tr><th>goods</th><th>qty</th><th>avg cost</th></tr>';
+    for (const n of names) {
+      html += `<tr><td><img class="good-icon" src="${goodIcon(n)}" alt="">${n}</td>` +
+        `<td class="num">${P.cargo[n]}</td><td class="num">${avgBuy(n).toFixed(0)}</td></tr>`;
+    }
+    return html + '</table>';
+  },
+  discoveries() {
+    const found = villages.filter(v => discoveriesFound.has(v.id));
+    let html = `<p>${found.length} / ${villages.length} discovered</p>`;
+    if (!found.length) return html + '<p>Nothing yet — go ashore where things seem interesting.</p>';
+    for (const v of found) {
+      html += `<div class="mate-card"><canvas class="disc-thumb" data-img="${v.img[0]},${v.img[1]}" ` +
+        `width="49" height="49" style="image-rendering:pixelated;border:1px solid #8a6d3b;border-radius:3px"></canvas>` +
+        `<div class="mate-stats"><b>${v.name}</b> · ${fmtLonLat(v.x, v.y)}<br>${v.desc.slice(0, 90)}…</div></div>`;
+    }
+    return html;
+  },
+  quests() {
+    let html = '';
+    if (P.discoveryQuest) {
+      const v = villages.find(x => x.id === P.discoveryQuest);
+      html += `<p><b>Research quest (MSC)</b>: find <b>${v.name}</b> at ${fmtLonLat(v.x, v.y)}, ` +
+              `then report to any MSC. Reward: 600g</p>`;
+    }
+    if (P.deliveryQuest) {
+      const t = ports.find(p => p.id === P.deliveryQuest.port);
+      html += `<p><b>Delivery (job house)</b>: letter to <b>${t.name}</b> ` +
+              `(${fmtLonLat(t.x, t.y)}). Reward: ${P.deliveryQuest.reward}g</p>`;
+    }
+    if (!html) html = '<p>No active quests — visit an MSC or a job house.</p>';
+    html += `<hr style="border-color:#2a3444">` +
+      `<p><b>Royal favor</b>: ${discoveriesFound.size}/${P.palaceMilestone + 5} discoveries to next audience</p>` +
+      `<p><b>Ports</b>: ${discovered.size} / ${ports.length} discovered · ` +
+      `<b>Discoveries</b>: ${discoveriesFound.size} / ${villages.length}</p>`;
+    return html;
+  },
+};
+
+function renderMenu() {
+  const tabs = document.getElementById('menu-tabs');
+  tabs.innerHTML = '';
+  for (const [id, label] of MENU_TABS) {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.className = id === menuTab ? 'active' : '';
+    b.onclick = () => { menuTab = id; renderMenu(); };
+    tabs.appendChild(b);
+  }
+  const div = document.getElementById('menu-content');
+  div.innerHTML = MENU_RENDER[menuTab]();
+  // draw discovery thumbnails (49px cells from the discoveries sheet)
+  div.querySelectorAll('.disc-thumb').forEach(cv => {
+    const [ix, iy] = cv.dataset.img.split(',').map(Number);
+    const g = cv.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    g.drawImage(discoveryImg, (ix - 1) * 49, (iy - 1) * 49, 49, 49, 0, 0, 49, 49);
+  });
+}
+
+function toggleMenu() {
+  menuOpen = !menuOpen;
+  if (menuOpen) { renderMenu(); menuPanel.style.display = 'block'; }
+  else menuPanel.style.display = 'none';
+}
+function closeMenu() { if (menuOpen) toggleMenu(); }
+
+// ---------------------------------------------------------------------------
 // Naval battles: pirates hunt at sea; SPACE fires a broadside
 // ---------------------------------------------------------------------------
 const battleHud = document.getElementById('battle-hud');
@@ -1130,7 +1308,7 @@ function shipwreck() {
   P.gold = Math.floor(P.gold / 2);
   P.cargo = {};
   P.cargoCost = {};
-  P.hull = Math.floor(curShip().hull * 0.3);
+  flag().hull = Math.floor(curShip().hull * 0.3);
   // limp to the nearest discovered port
   const ids = discovered.size ? [...discovered] : [1];
   let best = ports[0], bd = 1e9;
@@ -1234,8 +1412,8 @@ function updateBattle(dt) {
   battle.cd -= dt;
   const e = battle.enemy;
   document.getElementById('battle-my-label').textContent =
-    `${P.ship} — hull ${Math.ceil(P.hull)}/${curShip().hull}`;
-  document.getElementById('battle-my-bar').style.width = `${P.hull / curShip().hull * 100}%`;
+    `${curShip().name} — hull ${Math.ceil(flag().hull)}/${curShip().hull}`;
+  document.getElementById('battle-my-bar').style.width = `${flag().hull / curShip().hull * 100}%`;
   document.getElementById('battle-enemy-label').textContent =
     `${e.ship.name} — hull ${Math.ceil(e.hull)}/${e.ship.hull}`;
   document.getElementById('battle-enemy-bar').style.width = `${Math.max(0, e.hull) / e.ship.hull * 100}%`;
@@ -1243,8 +1421,10 @@ function updateBattle(dt) {
   for (let i = battle.balls.length - 1; i >= 0; i--) {
     const b = battle.balls[i];
     b.life -= dt;
-    b.mesh.position.addScaledVector(b.dir, 18 * dt);
     const target = b.fromPlayer ? e.pos : shipPos;
+    // homing: steer the ball toward the target's current position
+    b.dir.set(target.x - b.mesh.position.x, 0, target.z - b.mesh.position.z).normalize();
+    b.mesh.position.addScaledVector(b.dir, 18 * dt);
     const d = Math.hypot(target.x - b.mesh.position.x, target.z - b.mesh.position.z);
     let remove = b.life <= 0;
     if (d < 1.2 && battle) {
@@ -1254,8 +1434,8 @@ function updateBattle(dt) {
         e.hull -= b.dmg;
         if (e.hull <= 0) sinkEnemy();
       } else {
-        P.hull = Math.max(0, P.hull - b.dmg * (P.equipment.armor ? 0.75 : 1));
-        if (P.hull <= 0) shipwreck();
+        flag().hull = Math.max(0, flag().hull - b.dmg * (P.equipment.armor ? 0.75 : 1));
+        if (flag().hull <= 0) shipwreck();
       }
     }
     if (remove) {
@@ -1273,7 +1453,7 @@ const discoveryImg = new Image();
 discoveryImg.src = './assets/discoveries.png';
 
 function nearestVillage() {
-  let best = null, bestD = P.telescope ? 8 : 4;
+  let best = null, bestD = (P.telescope ? 8 : 4) + lookoutRange();
   for (const v of villages) {
     const d = Math.hypot(v.x - shipPos.x, v.y - shipPos.z);
     if (d < bestD) { best = v; bestD = d; }
@@ -1386,6 +1566,7 @@ addEventListener('keydown', e => {
   if (k === 'g') onAshoreKey();
   if (k === ' ') fireCannon();
   if (k === 'b') tryBoard();
+  if (k === 'i') toggleMenu();
   if (k === 'escape') onEscapeKey();
   if (['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
 });
@@ -1435,6 +1616,7 @@ function onAshoreKey() {
 
 function onEscapeKey() {
   if (discoveryPanel.style.display === 'block') { discoveryPanel.style.display = 'none'; return; }
+  if (menuOpen) { closeMenu(); return; }
   if (devOpen) { toggleDev(); return; }
   if (marketOpen) { closeMarket(); return; }
   if (shipyardOpen) { closeShipyard(); return; }
@@ -1456,7 +1638,7 @@ function refreshDevPanel() {
   document.getElementById('dev-gold').value = P.gold;
   document.getElementById('dev-speed').value = P.devSpeed ?? curShip().speed;
   document.getElementById('dev-status').textContent =
-    `ship: ${P.ship} · speed override: ${P.devSpeed ?? 'off'}`;
+    `flagship: ${curShip().name} · fleet: ${P.fleet.length}/5 · speed override: ${P.devSpeed ?? 'off'}`;
 }
 
 function toggleDev() {
@@ -1600,6 +1782,7 @@ window.UW = {
   P,                                        // player state (gold, cargo, ...)
   save,
   openBuilding: b => openBuilding(b),
+  toggleMenu,
   spawnPirate: (x, z, name) => spawnPirate(x ?? shipPos.x + 4, z ?? shipPos.z, name),
   fireCannon,
   getBattle: () => battle && { name: battle.enemy.ship.name, enemyHull: battle.enemy.hull,
@@ -1608,15 +1791,46 @@ window.UW = {
   getPirates: () => pirates.length,
   canBoard,
   tryBoard,
+  // test-only helpers (deterministic checks in slow headless environments)
+  debugHit: dmg => {
+    const before = flag().hull;
+    flag().hull = Math.max(0, flag().hull - dmg * (P.equipment.armor ? 0.75 : 1));
+    return before - flag().hull;
+  },
+  hurtEnemy: n => { if (battle) battle.enemy.hull -= n; },
   reset: () => { localStorage.removeItem(SAVE_KEY); location.reload(); },
 };
 
-document.getElementById('start-overlay').addEventListener('click', function () {
+// character selection on the start overlay
+{
+  const picker = document.getElementById('char-select');
+  CHARACTER_NAMES.forEach((name, ci) => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    c.className = 'char-portrait' + (ci === P.character ? ' selected' : '');
+    c.title = name;
+    const g = c.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    g.drawImage(personTex.image, (ci * 8 + 4) * 32, 0, 32, 32, 0, 0, 64, 64);
+    c.onclick = () => {
+      P.character = ci;
+      picker.querySelectorAll('.char-portrait').forEach(x => x.classList.remove('selected'));
+      c.classList.add('selected');
+      document.getElementById('char-name').textContent = name;
+    };
+    picker.appendChild(c);
+  });
+  document.getElementById('char-name').textContent = CHARACTER_NAMES[P.character];
+}
+
+document.getElementById('start-overlay').addEventListener('click', function (e) {
+  if (e.target.closest('#char-select') || started) return;   // picking a hero / already started
   this.style.display = 'none';
   started = true;
+  save();
   playMusic(seaMusicFor(1));   // Lisbon -> Mediterranean
-  showBanner('Lisbon, Portugal<small>February 1522 — your voyage begins</small>');
-}, { once: true });
+  showBanner(`Lisbon, Portugal<small>February 1522 — ${CHARACTER_NAMES[P.character]}'s voyage begins</small>`);
+});
 
 function tick() {
   requestAnimationFrame(tick);
@@ -1644,7 +1858,7 @@ function tick() {
 
   // --- movement input ---
   let dx = 0, dz = 0;
-  const panelOpen = discoveryPanel.style.display === 'block' || inBuilding || marketOpen || shipyardOpen || matesOpen || outfitOpen || devOpen;
+  const panelOpen = discoveryPanel.style.display === 'block' || inBuilding || marketOpen || shipyardOpen || matesOpen || outfitOpen || menuOpen || devOpen;
   if (started && !panelOpen) {
     if (keys['w'] || keys['arrowup']) dz -= 1;
     if (keys['s'] || keys['arrowdown']) dz += 1;
@@ -1661,7 +1875,7 @@ function tick() {
 
   if (scene === 'sea') {
     // --- ship movement (slide along coasts) ---
-    const curSpeed = (P.devSpeed ?? curShip().speed * sailBonus() * navBonus()) * speedFactor() * (crewOk() ? 1 : 0.7);
+    const curSpeed = (P.devSpeed ?? fleetSpeed() * sailBonus() * navBonus()) * speedFactor() * (crewOk() ? 1 : 0.7);
     if (moving) {
       const step = curSpeed * dt;
       const nx = shipPos.x + dx * step, nz = shipPos.z + dz * step;
@@ -1697,7 +1911,7 @@ function tick() {
     hudTop.innerHTML =
       `<b>${fmtLonLat(shipPos.x, shipPos.z)}</b> · day ${P.days}<br>` +
       `time: ${a} · speed: ${moving ? (curSpeed * 1.8).toFixed(1) : '0.0'} kn<br>` +
-      `gold: ${P.gold}g · food: ${P.provisions} · vigor: ${100 - P.fatigue} · hull: ${Math.ceil(P.hull)} · crew: ${P.crew}`;
+      `gold: ${P.gold}g · food: ${P.provisions} · vigor: ${100 - P.fatigue} · hull: ${Math.ceil(flag().hull)} · crew: ${P.crew}`;
   } else {
     // --- walk in port ---
     if (moving) {
@@ -1742,7 +1956,7 @@ function tick() {
     hudTop.innerHTML =
       `<b>${portName}</b> · day ${P.days}<br>` +
       `time: ${a} · gold: ${P.gold}g<br>` +
-      `fame: ${P.fame}${fameTitle() ? ' · ' + fameTitle() : ''} · ${P.ship}`;
+      `fame: ${P.fame}${fameTitle() ? ' · ' + fameTitle() : ''} · ${curShip().name}${P.fleet.length > 1 ? ' +' + (P.fleet.length - 1) : ''}`;
   }
 
   // --- banner fade ---
