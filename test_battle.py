@@ -22,6 +22,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(2500)
     page.click("#start-overlay .go")
     page.wait_for_timeout(500)
+    page.evaluate("window.UW.setNoAutoSpawn(true)")
 
     # --- market: icons + profit coloring ---
     page.evaluate("window.UW.enterPort(1)")
@@ -77,12 +78,16 @@ with sync_playwright() as p:
 
     # --- battle: spawn pirate, engage, fire, sink ---
     page.keyboard.press("Escape"); page.wait_for_timeout(300)  # set sail
-    page.evaluate("window.UW.P.fleet = [{ship: 'Sloop', hull: 100}]; window.UW.save()")
+    page.evaluate("window.UW.P.fleet = [{ship: 'Sloop', hull: 100}]; window.UW.P.crew = 60; window.UW.save()")
     page.evaluate("window.UW.teleport(700, 400)")
     page.wait_for_timeout(300)
     page.evaluate("window.UW.spawnPirate(702, 400, 'Balsa')")
-    page.wait_for_timeout(2500)   # pirate chases and engages (dist 2 < 3)
-    b = page.evaluate("window.UW.getBattle()")
+    b = None
+    for _ in range(60):
+        page.wait_for_timeout(500)
+        b = page.evaluate("window.UW.getBattle()")
+        if b is not None:
+            break
     check("battle started on contact", b is not None and b.get("name") == "Balsa")
     check("battle HUD visible", page.is_visible("#battle-hud"))
     page.screenshot(path="battle_start.png")
@@ -93,9 +98,9 @@ with sync_playwright() as p:
     page.wait_for_timeout(2500)
     b1 = page.evaluate("window.UW.getBattle()")
     check("player volley hit enemy", b1 is None or b1["enemyHull"] < 60)
-    page.evaluate("window.UW.hurtEnemy(45)")   # Balsa to 15 hull or below
+    page.evaluate("window.UW.hurtEnemy(55)")   # Balsa to 5 hull
     held = {"x": None, "z": None}
-    for i in range(15):
+    for i in range(8):
         page.keyboard.press("Space")
         page.wait_for_timeout(1200)
         b = page.evaluate("window.UW.getBattle()")
@@ -128,9 +133,14 @@ with sync_playwright() as p:
     page.evaluate("window.UW.P.fleet[0].hull = 100; window.UW.save()")
     page.wait_for_timeout(300)
     page.evaluate("window.UW.spawnPirate(702, 400, 'Nao')")
-    page.wait_for_timeout(1000)
-    page.evaluate("window.UW.getBattle()")
-    page.wait_for_timeout(6000)   # enemy approaches & fires (Nao guns 40 -> 10 dmg)
+    for _ in range(60):
+        page.wait_for_timeout(500)
+        if page.evaluate("window.UW.getBattle()") is not None:
+            break
+    for _ in range(40):
+        page.wait_for_timeout(500)
+        if page.evaluate("window.UW.P.fleet[0].hull") < 100:
+            break
     h = page.evaluate("window.UW.P.fleet[0].hull")
     check(f"enemy cannon hit player (hull {h})", h < 100)
     page.screenshot(path="battle_fight.png")

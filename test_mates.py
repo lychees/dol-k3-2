@@ -22,6 +22,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(2500)
     page.click("#start-overlay .go")
     page.wait_for_timeout(500)
+    page.evaluate("window.UW.setNoAutoSpawn(true)")
 
     def open_bld(name):
         page.evaluate(f"""() => {{

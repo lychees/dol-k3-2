@@ -1124,7 +1124,7 @@ const OUTFIT_ITEMS = [
     { name: 'Demiculverin', cost: 12000, desc: 'broadside x2.0' } ] },
   { key: 'ram', name: 'Ram', cost: 2500, desc: 'contact deals 15 hull/s in battle' },
   { key: 'figurehead', name: 'Figurehead', cost: 4000, desc: 'fatigue -50%, loot +25%' },
-  { key: 'boarding', name: 'Boarding Planks', cost: 3500, desc: 'B to capture crippled ships' },
+  { key: 'boarding', name: 'Boarding Planks', cost: 3500, desc: '+25% melee power in boarding' },
   { key: 'armor', name: 'Armor Plating', cost: 5000, desc: 'damage taken -25%' },
 ];
 
@@ -1316,6 +1316,7 @@ const PIRATE_SHIPS = ['Brigantine', 'Nao', 'Galleon', 'Carrack'];
 let pirates = [];             // overworld NPC ships hunting the player
 let battle = null;            // {enemy, balls, cd}
 let pirateTimer = 30;         // seconds until next spawn check
+let noAutoSpawn = false;      // test hook: disable random pirate spawns
 
 const ballGeo = new THREE.PlaneGeometry(0.5, 0.5);
 const ballMat = new THREE.MeshBasicMaterial({ color: 0x111111, side: THREE.DoubleSide });
@@ -1337,7 +1338,9 @@ function spawnPirate(x, z, name) {
   const mesh = makeShipMesh(ship.row);
   seaScene.add(mesh);
   const p = { mesh, pos: new THREE.Vector3(x, 0.4, z), dir: 'down', ship,
-              hull: ship.hull, cooldown: 2, fleeing: false, frame: 0, animT: 0 };
+              hull: ship.hull,
+              crew: ship.minCrew + Math.floor(Math.random() * ship.minCrew),
+              cooldown: 2, boardCd: 8, fleeing: false, frame: 0, animT: 0 };
   mesh.position.copy(p.pos);
   pirates.push(p);
   return p;
@@ -1373,23 +1376,65 @@ function fireBall(fromPos, targetPos, dmg, fromPlayer) {
   playSfx('./assets/sounds/shoot.ogg');
 }
 
+// best swordplay among assigned cabin mates drives melee power
+const meleeFactor = () => {
+  let sw = 0;
+  for (const [slot] of CABINS) sw = Math.max(sw, cabinMate(slot)?.swordplay ?? 0);
+  return 1 + sw / 100;
+};
+
 function canBoard() {
-  return battle && P.equipment.boarding &&
-         battle.enemy.hull < battle.enemy.ship.hull * 0.3 &&
-         shipPos.distanceTo(battle.enemy.pos) < 3;
+  return battle && shipPos.distanceTo(battle.enemy.pos) < 2.5 && !(battle.boardLock > 0);
+}
+
+function captureEnemy() {
+  const e = battle.enemy;
+  playSfx('./assets/sounds/explosion.ogg');
+  if (P.fleet.length < 5) {
+    P.fleet.push({ ship: e.ship.name, hull: Math.floor(e.ship.hull * 0.5) });
+    P.fame += 5;
+    save();
+    showBanner(`${e.ship.name} captured!<small>she joins your fleet · fame +5</small>`);
+  } else {
+    const loot = Math.floor((300 + e.ship.price / 10) * (P.equipment.figurehead ? 1.25 : 1));
+    P.gold += loot;
+    P.fame += 5;
+    save();
+    showBanner(`${e.ship.name} captured!<small>sold for ${loot}g · fame +5</small>`);
+  }
+  removePirate(e);
+  endBattle();
+}
+
+// crew-vs-crew melee; initiated by the player (B) or by a much stronger enemy
+function boardingMelee(byPlayer) {
+  const e = battle.enemy;
+  const pFactor = meleeFactor() * (P.equipment.boarding ? 1.25 : 1);
+  let rounds = 0;
+  let pStart = P.crew, eStart = e.crew;
+  while (P.crew > 0 && e.crew > 0 && rounds < 8) {
+    rounds++;
+    e.crew = Math.max(0, e.crew - Math.max(1, Math.round(P.crew * 0.2 * pFactor * (0.8 + Math.random() * 0.4))));
+    if (e.crew <= 0) break;
+    P.crew = Math.max(0, P.crew - Math.max(1, Math.round(e.crew * 0.2 * (0.8 + Math.random() * 0.4))));
+  }
+  save();
+  if (e.crew <= 0) {
+    showBanner(`Boarding victory!<small>their crew is finished (${eStart} → 0); you lost ${pStart - P.crew} sailors</small>`);
+    captureEnemy();
+  } else if (P.crew <= 0) {
+    shipwreck('massacre');
+  } else {
+    // stalemate: both sides disengage and cannot re-board for a while
+    battle.boardLock = 6;
+    showBanner(`Melee stalemate<small>you lost ${pStart - P.crew} sailors, they lost ${eStart - e.crew}</small>`);
+  }
 }
 
 function tryBoard() {
   if (!canBoard() || scene !== 'sea') return;
-  const e = battle.enemy;
-  const loot = Math.floor((300 + e.ship.price / 10) * (P.equipment.figurehead ? 1.25 : 1));
-  P.gold += loot;
-  P.fame += 5;
-  save();
-  removePirate(e);
-  playSfx('./assets/sounds/explosion.ogg');
-  showBanner(`Ship captured!<small>prize money: ${loot}g · fame +5</small>`);
-  endBattle();
+  playSfx('./assets/sounds/engage.ogg');
+  boardingMelee(true);
 }
 
 function fireCannon() {
@@ -1411,11 +1456,12 @@ function sinkEnemy() {
   endBattle();
 }
 
-function shipwreck() {
+function shipwreck(reason = 'battle') {
   P.gold = Math.floor(P.gold / 2);
   P.cargo = {};
   P.cargoCost = {};
   flag().hull = Math.floor(curShip().hull * 0.3);
+  P.crew = Math.max(P.crew, fleetMinCrew());
   // limp to the nearest discovered port
   const ids = discovered.size ? [...discovered] : [1];
   let best = ports[0], bd = 1e9;
@@ -1435,7 +1481,9 @@ function shipwreck() {
     }
     if (ok) break;
   }
-  showBanner(`Shipwreck!<small>half your gold and all cargo lost — you limped to ${best.name}</small>`);
+  showBanner(reason === 'massacre'
+    ? `Your crew was wiped out!<small>half your gold and all cargo lost — you limped to ${best.name}</small>`
+    : `Shipwreck!<small>half your gold and all cargo lost — you limped to ${best.name}</small>`);
   save();
   endBattle();
 }
@@ -1443,7 +1491,7 @@ function shipwreck() {
 function updatePirates(dt) {
   // spawn new pirates over time
   pirateTimer -= dt;
-  if (pirateTimer <= 0) {
+  if (pirateTimer <= 0 && !noAutoSpawn) {
     pirateTimer = 25 + Math.random() * 20;
     if (pirates.length < 2 && Math.random() < 0.6) {
       for (let tries = 0; tries < 12; tries++) {
@@ -1476,6 +1524,16 @@ function updatePirates(dt) {
       if (p.cooldown <= 0 && dist < 10 && !p.fleeing) {
         p.cooldown = 2.5;
         fireBall(p.pos, shipPos, p.ship.guns / 4, false);
+      }
+      // aggressive crews grapple and board when they outnumber you
+      if (battle) battle.boardLock = Math.max(0, (battle.boardLock ?? 0) - dt);
+      p.boardCd -= dt;
+      if (battle && !p.fleeing && dist < 2.5 && (battle.boardLock ?? 0) <= 0 &&
+          p.boardCd <= 0 && p.crew > P.crew * 1.5) {
+        p.boardCd = 10;
+        showBanner('The enemy grapples and boards you!<small>deck fight!</small>');
+        boardingMelee(false);
+        if (!battle) continue;
       }
       if (p.fleeing && dist > 30) {
         showBanner('The pirates fled!');
@@ -1519,10 +1577,10 @@ function updateBattle(dt) {
   battle.cd -= dt;
   const e = battle.enemy;
   document.getElementById('battle-my-label').textContent =
-    `${curShip().name} — hull ${Math.ceil(flag().hull)}/${curShip().hull}`;
+    `${curShip().name} — hull ${Math.ceil(flag().hull)}/${curShip().hull} · crew ${P.crew}`;
   document.getElementById('battle-my-bar').style.width = `${flag().hull / curShip().hull * 100}%`;
   document.getElementById('battle-enemy-label').textContent =
-    `${e.ship.name} — hull ${Math.ceil(e.hull)}/${e.ship.hull}`;
+    `${e.ship.name} — hull ${Math.ceil(e.hull)}/${e.ship.hull} · crew ${e.crew}`;
   document.getElementById('battle-enemy-bar').style.width = `${Math.max(0, e.hull) / e.ship.hull * 100}%`;
 
   for (let i = battle.balls.length - 1; i >= 0; i--) {
@@ -1539,10 +1597,15 @@ function updateBattle(dt) {
       playSfx('./assets/sounds/explosion.ogg');
       if (b.fromPlayer) {
         e.hull -= b.dmg;
+        e.crew = Math.max(0, e.crew - Math.max(1, Math.round(b.dmg * 0.3)));
         if (e.hull <= 0) sinkEnemy();
+        else if (e.crew <= 0) captureEnemy();
       } else {
         flag().hull = Math.max(0, flag().hull - b.dmg * (P.equipment.armor ? 0.75 : 1));
-        if (flag().hull <= 0) shipwreck();
+        // crew casualties are gentler on the player (else 2 volleys wipe a small crew)
+        P.crew = Math.max(0, P.crew - Math.max(1, Math.round(b.dmg * (P.equipment.armor ? 0.75 : 1) * 0.1)));
+        if (flag().hull <= 0) shipwreck('battle');
+        else if (P.crew <= 0) shipwreck('massacre');
       }
     }
     if (remove) {
@@ -1911,6 +1974,9 @@ window.UW = {
     return before - flag().hull;
   },
   hurtEnemy: n => { if (battle) battle.enemy.hull -= n; },
+  setNoAutoSpawn: v => { noAutoSpawn = v; },
+  hurtEnemyCrew: n => { if (battle) battle.enemy.crew -= n; },
+  getEnemyCrew: () => battle?.enemy.crew,
   reset: () => { localStorage.removeItem(SAVE_KEY); location.reload(); },
 };
 
@@ -2011,7 +2077,7 @@ function tick() {
     // --- hints: boarding / nearby port / village ---
     const p = battle ? null : nearestPort();
     const v = p || battle ? null : nearestVillage();
-    showHint(canBoard() ? `<span class="key">B</span> board & capture the ship!`
+    showHint(canBoard() ? `<span class="key">B</span> board them — melee fight!`
              : p ? `<span class="key">E</span> enter ${p.name}`
              : v ? `<span class="key">G</span> go ashore — something seems interesting here`
              : null);

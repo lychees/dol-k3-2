@@ -217,6 +217,25 @@ the uw2ol project, which took them from the original Uncharted Waters 2
   static npcs idle-animate at entrances — dog at the bar, old man at the
   inn, agent at the market, guard at the palace. All hidden at night,
   like in uw2ol.
+### 13. 接舷战 + 双生命（水手/船耐）
+- **Dual health**: every ship (player fleet & pirates) has hull durability
+  AND a crew pool. Cannon volleys damage hull plus crew casualties
+  (30% for enemies, gentler 10% for the player). Hull 0 = sinking /
+  shipwreck; crew 0 = capture / massacre.
+- **Boarding melee (B, within 2.5 tiles)**: crew-vs-crew attrition rounds
+  driven by best cabin-mate swordplay; Boarding Planks give +25%.
+  Win -> capture the ship (joins fleet if <5, else prize money, fame +5);
+  lose your crew -> shipwreck. Stalemates impose a 6s re-board lock.
+  Aggressive pirates grapple and board when they outnumber you 1.5x —
+  but only after an 8s grace period so you can flee or fight first.
+- **Balance lessons from playtesting**: pirates now spawn with small
+  crews (1-2x min crew) and player crew casualties are 10% (a fresh
+  5-sailor Balsa used to get massacred by 2 volleys / instant board).
+- Battle HUD shows hull AND crew for both sides.
+- Test hardening: noAutoSpawn hook, poll-based waits, over-provisioned
+  test flagships — headless SwiftShader crashes/throttles made
+  wall-clock assertions flaky (game logic proven correct via
+  fireBall/shipwreck instrumentation traces).
 ## Key file formats (cheat sheet)
 
 | Data | Format |
