@@ -270,6 +270,17 @@ the uw2ol project, which took them from the original Uncharted Waters 2
   description, found mark) · **Teleport** (dropdown of all 130 ports,
   teleports the fleet to the port's nearest sailable coast via the shared
   `sailableNear` helper, shaking off pursuers).
+### 17. 船只属性完善 + 吧女
+- **Ship attributes**: ships.json now carries tacking too; the shipyard
+  table shows speed, tacking, cargo, hull, guns, crew (min-max) and price
+  for all 22 ship types.
+- **Bar maids (hash_maids)**: 28 named waitresses (maids.json + maid id
+  per port in port_meta.json). Bars with a maid offer "Talk to the
+  waitress" — she greets by name with her portrait and a submenu:
+  Ask for info (real trade tip: a local good's best-paying region),
+  Tell her a story (small fame chance), Buy her a drink (100g →
+  discovery coordinates). Submenu persistence fixed by letting actions
+  keep their custom menu (return true).
 ## Key file formats (cheat sheet)
 
 | Data | Format |

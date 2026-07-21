@@ -30,7 +30,7 @@ const CAM_TILT = 0.35;                  // radians from vertical
 // ---------------------------------------------------------------------------
 // Boot: load all assets, then init
 // ---------------------------------------------------------------------------
-const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, shipData, matesData, shipTex, personTex] =
+const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, shipData, matesData, maidsData, shipTex, personTex] =
   await Promise.all([
     fetch('./assets/world_map.bin').then(r => r.arrayBuffer()),
     fetch('./assets/portmaps.bin').then(r => r.arrayBuffer()),
@@ -41,6 +41,7 @@ const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, 
     fetch('./assets/goods.json').then(r => r.json()),
     fetch('./assets/ships.json').then(r => r.json()),
     fetch('./assets/mates.json').then(r => r.json()),
+    fetch('./assets/maids.json').then(r => r.json()),
     loadTex('./assets/ship-tileset.png', false),
     loadTex('./assets/person-tileset.png', false),
   ]);
@@ -368,6 +369,58 @@ function closeTopPanel() {
     if (PANELS[n].open) { closePanel(n); return true; }
   }
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// Bar maids (uw2ol hash_maids): waitress in the bar with real tips
+// ---------------------------------------------------------------------------
+function talkToMaid(maidId) {
+  const maid = maidsData[maidId];
+  const img = figureUrl(...maid.image);
+  const actions = [
+    { label: 'Ask for info', action() {
+      // best-paying region for a random sellable good of this port's region
+      const region = portMeta[Math.min(portId, 101)].region;
+      const table = region && goodsData.regions[region];
+      if (table) {
+        const names = Object.keys(table.available);
+        const g = names[Math.floor(Math.random() * names.length)];
+        let best = null, bestPrice = 0;
+        for (const [r, t] of Object.entries(goodsData.regions)) {
+          if (r === region) continue;
+          const price = t.prices[g]?.[1] ?? 0;
+          if (price > bestPrice) { bestPrice = price; best = r; }
+        }
+        setBuildingText(`<img src="${img}" style="width:65px;height:81px;image-rendering:pixelated"><br>` +
+          `<b>${maid.name}</b>: "They say <b>${g}</b> fetches a fine price in <b>${best}</b>… just between us."`);
+      } else {
+        setBuildingText(`<img src="${img}" style="width:65px;height:81px;image-rendering:pixelated"><br>` +
+          `<b>${maid.name}</b>: "Uhh… that's too personal."`);
+      }
+    } },
+    { label: 'Tell her a story', action() {
+      P.fame += Math.random() < 0.3 ? 1 : 0;
+      setBuildingText(`<img src="${img}" style="width:65px;height:81px;image-rendering:pixelated"><br>` +
+        `<b>${maid.name}</b>: "Wow! Interesting… tell me another one sometime, captain."`);
+    } },
+    { label: 'Buy her a drink', cost: 100, action() {
+      P.gold -= 100;
+      const unknown = villages.filter(v => !discoveriesFound.has(v.id));
+      if (unknown.length) {
+        const v = unknown[Math.floor(Math.random() * unknown.length)];
+        setBuildingText(`<img src="${img}" style="width:65px;height:81px;image-rendering:pixelated"><br>` +
+          `<b>${maid.name}</b>: "How sweet. You know, a sailor told me there's something strange at ` +
+          `<b>${fmtLonLat(v.x, v.y)}</b>…"`);
+      } else {
+        setBuildingText(`<img src="${img}" style="width:65px;height:81px;image-rendering:pixelated"><br>` +
+          `<b>${maid.name}</b>: "How sweet of you, captain."`);
+      }
+    } },
+  ];
+  setBuildingText(`<img src="${img}" style="width:65px;height:81px;image-rendering:pixelated"><br>` +
+    `<b>${maid.name}</b>: "I'm ${maid.name}. How are you?"`);
+  renderActions(actions.concat(buildingMenu(inBuilding).filter(x => !x.label.startsWith('Talk to the waitress'))));
+  return true;   // keep the submenu (the wrapper must not re-render)
 }
 
 // ---------------------------------------------------------------------------
@@ -783,6 +836,7 @@ const SHIPS = Object.entries(shipData).map(([name, a]) => ({
   guns: a.guns,
   minCrew: a.min_crew,
   maxCrew: a.max_crew,
+  tacking: a.tacking ?? 70,
   price: a.price,
   row: a.capacity < 100 ? 0 : a.capacity < 300 ? 2 : a.capacity < 600 ? 1 : 3,
 })).sort((x, y) => x.price - y.price);
@@ -924,7 +978,11 @@ function renderActions(menu) {
     const btn = document.createElement('button');
     btn.textContent = item.label + (item.cost ? ` (${item.cost}g)` : '');
     btn.disabled = !!item.disabled || (!!item.cost && P.gold < item.cost);
-    btn.onclick = () => { item.action(); save(); renderActions(buildingMenu(inBuilding)); };
+    btn.onclick = () => {
+      const keep = item.action();
+      save();
+      if (!keep) renderActions(buildingMenu(inBuilding));   // action may render its own submenu
+    };
     buildingActions.appendChild(btn);
   }
 }
@@ -1008,6 +1066,11 @@ function buildingMenu(b) {
               `"I miss the high seas. Take me with you, captain — for ${cost}g."`);
           } });
         }
+      }
+      // this port's bar maid (uw2ol hash_maids)
+      const maidId = portMeta[Math.min(portId, 101)].maid;
+      if (maidId && maidsData[maidId]) {
+        menu.push({ label: `Talk to the waitress`, action() { return talkToMaid(maidId); } });
       }
       menu.push({ label: 'Manage mates & cabins', action() { openPanel('mates'); } });
       return menu;
@@ -1324,13 +1387,14 @@ function renderShipyard() {
   document.getElementById('shipyard-info').innerHTML =
     `gold: <b>${P.gold}g</b> &nbsp;·&nbsp; fleet: <b>${P.fleet.length}/5</b> ships`;
   const div = document.getElementById('shipyard-table');
-  let html = '<table><tr><th></th><th>ship</th><th>speed</th><th>cargo</th><th>hull</th><th>guns</th><th>price</th><th></th></tr>';
+  let html = '<table><tr><th></th><th>ship</th><th>speed</th><th>tack</th><th>cargo</th><th>hull</th><th>guns</th><th>crew</th><th>price</th><th></th></tr>';
   for (const s of SHIPS) {
     const own = P.fleet.some(f => f.ship === s.name);
     html += `<tr><td><img class="ship-img" src="./assets/ships/${s.name.toLowerCase()}.png" alt=""></td>` +
       `<td>${s.name}${own ? ' ★' : ''}</td>` +
-      `<td class="num">${s.speed.toFixed(1)}</td><td class="num">${s.cargo}</td>` +
+      `<td class="num">${s.speed.toFixed(1)}</td><td class="num">${s.tacking}</td><td class="num">${s.cargo}</td>` +
       `<td class="num">${s.hull}</td><td class="num">${s.guns}</td>` +
+      `<td class="num">${s.minCrew}-${s.maxCrew}</td>` +
       `<td class="num">${s.price}</td><td></td></tr>`;
   }
   div.innerHTML = html + '</table>';
