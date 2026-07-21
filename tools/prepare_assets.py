@@ -45,7 +45,7 @@ with open(f"{DST}/ports.json", "w") as f:
 print("ports.json", len(ports), "ports")
 
 # --- 4. a couple of sea music tracks ---
-os.makedirs(f"{DST}/music", exist_ok=True)
+os.makedirs(f"{DST}/music/sea", exist_ok=True)
 for track in ["Mediterranean.mp3", "Atlantic Ocean.mp3", "North Sea.mp3"]:
-    shutil.copy(f"{SRC}/sounds/music/sea/{track}", f"{DST}/music/{track}")
+    shutil.copy(f"{SRC}/sounds/music/sea/{track}", f"{DST}/music/sea/{track}")
 print("music copied")
