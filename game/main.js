@@ -212,6 +212,22 @@ const portPoints = new THREE.Points(portGeo, new THREE.PointsMaterial({
 }));
 seaScene.add(portPoints);
 
+// towns (blue) and ruins (purple) get their own markers, visible everywhere
+function makeMarkers(list, color) {
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(list.length * 3);
+  list.forEach((t, i) => { pos.set([t.x + 0.5, 0.6, (t.z ?? t.y) + 0.5], i * 3); });
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  return new THREE.Points(geo, new THREE.PointsMaterial({
+    map: markerTex, size: 1.6, transparent: true, depthWrite: false,
+    color, sizeAttenuation: true,
+  }));
+}
+const townPoints = makeMarkers(towns, 0x60a5fa);
+const ruinPoints = makeMarkers(ruins, 0xc084fc);
+seaScene.add(townPoints);
+seaScene.add(ruinPoints);
+
 function makeDotTexture() {
   const c = document.createElement('canvas');
   c.width = c.height = 64;
@@ -838,7 +854,7 @@ let townOpen = false, ruin = null;
 
 function nearestTown() {
   if (scene !== 'land') return null;
-  let best = null, bestD = 2.5;
+  let best = null, bestD = 4;
   for (const t of towns) {
     const d = Math.hypot(t.x - landPos.x, t.z - landPos.z);
     if (d < bestD) { best = t; bestD = d; }
@@ -848,7 +864,7 @@ function nearestTown() {
 
 function nearestRuin() {
   if (scene !== 'land') return null;
-  let best = null, bestD = 2.5;
+  let best = null, bestD = 4;
   for (const r of ruins) {
     const d = Math.hypot(r.x - landPos.x, r.z - landPos.z);
     if (d < bestD) { best = r; bestD = d; }
@@ -2274,8 +2290,9 @@ function goAshore(v) {
 const mm = document.getElementById('minimap');
 const mmCtx = mm.getContext('2d');
 const mmBase = document.createElement('canvas');
-mmBase.width = mm.width; mmBase.height = mm.height;
-{
+
+function buildWorldMinimap() {
+  mmBase.width = mm.width; mmBase.height = mm.height;
   const g = mmBase.getContext('2d');
   const img = g.createImageData(mm.width, mm.height);
   for (let y = 0; y < mm.height; y++) {
@@ -2290,11 +2307,29 @@ mmBase.width = mm.width; mmBase.height = mm.height;
     }
   }
   g.putImageData(img, 0, 0);
-  g.fillStyle = '#ffd94d';
+  g.fillStyle = '#ffd94d';                       // ports in gold
   for (const p of ports) {
     g.fillRect(p.x / COLS * mm.width - 1, p.y / ROWS * mm.height - 1, 2, 2);
   }
+  g.fillStyle = '#60a5fa';                       // towns in blue
+  for (const t of towns) {
+    g.fillRect(t.x / COLS * mm.width - 1, t.z / ROWS * mm.height - 1, 2, 2);
+  }
+  g.fillStyle = '#c084fc';                       // ruins in purple
+  for (const r of ruins) {
+    g.fillRect(r.x / COLS * mm.width - 1, r.z / ROWS * mm.height - 1, 2, 2);
+  }
 }
+buildWorldMinimap();
+
+// double-click the minimap to enlarge / shrink it
+mm.addEventListener('dblclick', () => {
+  const big = mm.dataset.big === '1';
+  mm.dataset.big = big ? '0' : '1';
+  mm.width = big ? 240 : 720;
+  mm.height = big ? 120 : 360;
+  buildWorldMinimap();
+});
 
 const mmPort = document.createElement('canvas');
 mmPort.width = mmPort.height = PORT_SIZE;
@@ -2330,12 +2365,7 @@ function drawMinimap() {
     for (const p of pirates) {
       mmCtx.fillRect(p.pos.x / COLS * mm.width - 1.5, p.pos.z / ROWS * mm.height - 1.5, 3, 3);
     }
-    if (scene === 'land') {
-      mmCtx.fillStyle = '#60a5fa';   // towns in blue
-      for (const t of towns) mmCtx.fillRect(t.x / COLS * mm.width - 1.5, t.z / ROWS * mm.height - 1.5, 3, 3);
-      mmCtx.fillStyle = '#c084fc';   // ruins in purple
-      for (const r of ruins) mmCtx.fillRect(r.x / COLS * mm.width - 1.5, r.z / ROWS * mm.height - 1.5, 3, 3);
-    }
+
   } else {
     mmCtx.clearRect(0, 0, mm.width, mm.height);
     mmCtx.drawImage(mmPort, 0, 0, mm.width, mm.height);   // stretch to fit — show the whole port
@@ -2409,6 +2439,11 @@ function onUseKey() {
     hideBuildingPanel();
   } else if (buildingNear) {
     openBuilding(buildingNear);
+  } else if (scene === 'land') {
+    const t = nearestTown();
+    const ru = nearestRuin();
+    if (t) openTown(t);
+    else if (ru && !ruinCooldown(ru.id)) startRuin(ru);
   }
 }
 
@@ -2656,7 +2691,7 @@ let started = false;
 // debug hook
 window.UW = {
   setTime: t => { gameTime = t; },
-  shipPos, personPos,
+  shipPos, personPos, landPos,
   setZoom: d => { camDist = d; },
   enterPort: id => enterPort(id),
   getScene: () => scene,
@@ -2666,6 +2701,7 @@ window.UW = {
   getDiscovered: () => [...discoveriesFound],
   teleport: (x, z) => { shipPos.x = x; shipPos.z = z; },
   walkTo: (x, z) => { personPos.x = x; personPos.z = z; },
+  landTo: (x, z) => { landPos.x = x; landPos.z = z; },
   getMusic: () => audio.dataset.cur,
   getSfx: () => sfx.src,
   P,                                        // player state (gold, cargo, ...)

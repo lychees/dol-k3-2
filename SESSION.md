@@ -307,6 +307,16 @@ the uw2ol project, which took them from the original Uncharted Waters 2
   monsters (uses the DQ battle with an onEnd callback), traps, caches,
   and a final treasure (gold + exp + fame). 7-day re-explore cooldown
   (P.ruinCd). Purple dots on the land minimap.
+### 20. 城镇可见性修复 + 小地图放大
+- **Towns/ruins are now visible everywhere**: blue (towns) and purple
+  (ruins) markers on the 3D world map (Points, like port markers) and on
+  the minimap in every scene, not just land mode.
+- **Enter radius** for towns/ruins widened from 2.5 to 4 tiles.
+- **Double-click the minimap** to enlarge it (240x120 <-> 720x360, base
+  map rebuilt at the new resolution).
+- Bug found: the land branch of the E handler (town/ruin entry) had been
+  lost in an earlier silent patch-replace failure; restored.
+- Debug hooks: `landTo(x, z)` for tests.
 ## Key file formats (cheat sheet)
 
 | Data | Format |
