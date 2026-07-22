@@ -290,6 +290,23 @@ the uw2ol project, which took them from the original Uncharted Waters 2
   per level, 20% of the ship's price per level). `shipStats(f)` computes
   effective stats with mods; fleet totals (cargo/guns/speed) and the
   flagship's max hull all respect refits. Hull mods also add current hp.
+### 19. 陆地城市 + 陆地遗迹 + 新发现物
+- **12 new discovery sites** (villages.json 98 -> 110): Mount Fuji, Grand
+  Canyon, Victoria Falls, Ayers Rock, Great Wall, Mount Everest, Niagara
+  Falls, Lake Baikal, Iguazu Falls, Dead Sea, Matterhorn, Amazon River —
+  using the 12 free art cells in the discoveries sheet; coords converted
+  from real lon/lat and snapped to the nearest land tile.
+- **14 land towns** (towns.json): Madrid, Paris, Vienna, Moscow, Kiev,
+  Baghdad, Timbuktu, Delhi, Samarkand, Lhasa, Xi'an, Mexico City, Cuzco,
+  Karakorum. Walk up (E) to enter the town panel: rest at the inn (full
+  party heal), buy provisions, hear rumors (discovery coords). Blue dots
+  on the land minimap.
+- **10 explorable ruins** (ruins.json): Valley of Kings, Delphi, Petra,
+  Angkor Wat, Ajanta Caves, Teotihuacan, Chichen Itza, Great Zimbabwe,
+  Mohenjo-daro, Mogao Caves. Staged exploration (4 stages + sanctum):
+  monsters (uses the DQ battle with an onEnd callback), traps, caches,
+  and a final treasure (gold + exp + fame). 7-day re-explore cooldown
+  (P.ruinCd). Purple dots on the land minimap.
 ## Key file formats (cheat sheet)
 
 | Data | Format |

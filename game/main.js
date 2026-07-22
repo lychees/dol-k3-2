@@ -30,7 +30,7 @@ const CAM_TILT = 0.35;                  // radians from vertical
 // ---------------------------------------------------------------------------
 // Boot: load all assets, then init
 // ---------------------------------------------------------------------------
-const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, shipData, matesData, maidsData, shipTex, personTex] =
+const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, shipData, matesData, maidsData, towns, ruins, shipTex, personTex] =
   await Promise.all([
     fetch('./assets/world_map.bin').then(r => r.arrayBuffer()),
     fetch('./assets/portmaps.bin').then(r => r.arrayBuffer()),
@@ -42,6 +42,8 @@ const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, 
     fetch('./assets/ships.json').then(r => r.json()),
     fetch('./assets/mates.json').then(r => r.json()),
     fetch('./assets/maids.json').then(r => r.json()),
+    fetch('./assets/towns.json').then(r => r.json()),
+    fetch('./assets/ruins.json').then(r => r.json()),
     loadTex('./assets/ship-tileset.png', false),
     loadTex('./assets/person-tileset.png', false),
   ]);
@@ -759,6 +761,7 @@ function endLandBattle(won) {
   if (won) {
     P.gold += bt.enemy.gold;
     P.hero.exp += bt.enemy.exp;
+    const cb = bt.onEnd;
     // level ups
     while (P.hero.exp >= P.hero.lv * 20) {
       P.hero.exp -= P.hero.lv * 20;
@@ -769,7 +772,7 @@ function endLandBattle(won) {
     P.fame += 1;
     bt.over = true;
     save();
-    setTimeout(() => { closeLandBattle(); }, 1600);
+    setTimeout(() => { closeLandBattle(); cb?.(true); }, 1600);
   } else if (won === null) {
     // defeated: wake up back at the ship
     bt.over = true;
@@ -784,7 +787,9 @@ function endLandBattle(won) {
       showBanner('You barely made it back to the ship…<small>lost 10% of your gold</small>');
     }, 2000);
   } else {
+    const cb = bt.onEnd;
     closeLandBattle();   // ran away
+    cb?.(false);
   }
   renderLandBattle();
 }
@@ -823,6 +828,176 @@ function closeLandBattle() {
   playMusic(seaMusicFor(portId ?? 1));
   encounterT = 4;   // brief peace after a fight
 }
+
+// ---------------------------------------------------------------------------
+// Land towns & ruins: walk in, rest up, explore for treasure
+// ---------------------------------------------------------------------------
+const townPanel = document.getElementById('town-panel');
+const ruinPanel = document.getElementById('ruin-panel');
+let townOpen = false, ruin = null;
+
+function nearestTown() {
+  if (scene !== 'land') return null;
+  let best = null, bestD = 2.5;
+  for (const t of towns) {
+    const d = Math.hypot(t.x - landPos.x, t.z - landPos.z);
+    if (d < bestD) { best = t; bestD = d; }
+  }
+  return best;
+}
+
+function nearestRuin() {
+  if (scene !== 'land') return null;
+  let best = null, bestD = 2.5;
+  for (const r of ruins) {
+    const d = Math.hypot(r.x - landPos.x, r.z - landPos.z);
+    if (d < bestD) { best = r; bestD = d; }
+  }
+  return best;
+}
+
+function openTown(t) {
+  townOpen = true;
+  document.getElementById('town-name').textContent = t.name;
+  document.getElementById('town-text').textContent =
+    `A quiet inland town. Merchants and travelers rest here.`;
+  const acts = document.getElementById('town-actions');
+  acts.innerHTML = '';
+  const mk = (label, fn, disabled = false) => {
+    const b = document.createElement('button');
+    b.textContent = label; b.disabled = disabled; b.onclick = fn;
+    acts.appendChild(b);
+  };
+  mk('Rest at the inn (10g)', () => {
+    if (P.gold < 10) return;
+    P.gold -= 10;
+    P.fatigue = 0;
+    P.hero.hp = heroMaxHp();
+    for (const id of P.mates) P.mateHp[id] = mateMaxHp(id);
+    onNewDay();
+    document.getElementById('town-text').textContent = 'You spend a restful night. The party is fully refreshed.';
+    save();
+  }, P.gold < 10);
+  mk('Buy provisions +50 (50g)', () => {
+    if (P.gold < 50 || P.provisions >= 100) return;
+    P.gold -= 50;
+    P.provisions = Math.min(100, P.provisions + 50);
+    document.getElementById('town-text').textContent = 'Supplies loaded onto the ship via the local caravans.';
+    save();
+  }, P.gold < 50 || P.provisions >= 100);
+  mk('Hear rumors', () => {
+    const unknown = villages.filter(v => !discoveriesFound.has(v.id));
+    if (unknown.length) {
+      const v = unknown[Math.floor(Math.random() * unknown.length)];
+      document.getElementById('town-text').textContent =
+        `"They say there's something strange at ${fmtLonLat(v.x, v.y)}…"`;
+    } else {
+      document.getElementById('town-text').textContent = '"You\'ve seen it all, captain!"';
+    }
+  });
+  mk('Leave', () => closeTown());
+  townPanel.style.display = 'block';
+}
+function closeTown() {
+  if (!townOpen) return;
+  townOpen = false;
+  townPanel.style.display = 'none';
+}
+
+// --- ruin exploration: staged events ending in treasure ---
+const RUIN_STAGES = 4;
+function startRuin(r) {
+  ruin = { data: r, stage: 0, log: [r.desc], loot: 0 };
+  renderRuin();
+}
+function renderRuin() {
+  if (!ruin) { ruinPanel.style.display = 'none'; return; }
+  ruinPanel.style.display = 'block';
+  document.getElementById('ruin-name').textContent = ruin.data.name;
+  document.getElementById('ruin-stage').textContent =
+    ruin.stage < RUIN_STAGES ? `stage ${ruin.stage + 1} / ${RUIN_STAGES + 1}` : 'the inner sanctum';
+  document.getElementById('ruin-log').innerHTML = ruin.log.map(l => `<div>${l}</div>`).join('');
+  document.getElementById('ruin-log').scrollTop = 1e6;
+  document.getElementById('ruin-loot').textContent = ruin.loot ? `loot so far: ${ruin.loot}g` : '';
+}
+
+function ruinNext() {
+  if (!ruin) return;
+  const roll = Math.random();
+  if (ruin.stage >= RUIN_STAGES) { ruinTreasure(); return; }
+  ruin.stage++;
+  if (roll < 0.45) {
+    // monster!
+    ruin.log.push('Something stirs in the dark…');
+    renderRuin();
+    startLandBattle();
+    landBattle.onEnd = won => {
+      if (won === true) { ruin && ruin.log.push('The way is clear.'); renderRuin(); }
+      else if (won === false) { ruinFlee(); }
+      // defeat handled by the usual wake-at-ship; ruin run just ends
+      if (won === null) ruin = null, renderRuin();
+    };
+  } else if (roll < 0.7) {
+    const dmg = Math.round(3 + Math.random() * (4 + P.hero.lv));
+    P.hero.hp = Math.max(0, P.hero.hp - dmg);
+    ruin.log.push(`A trap! ${CHARACTER_NAMES[P.character]} takes ${dmg} damage.`);
+    if (P.hero.hp <= 0) {
+      ruin.log.push('You collapse in the dark…');
+      P.gold = Math.floor(P.gold * 0.9);
+      P.hero.hp = 1;
+      for (const id of P.mates) P.mateHp[id] = 1;
+      ruin = null;
+      renderRuin();
+      landPos.set(shipPos.x, 0.4, shipPos.z);
+      reboard();
+      showBanner('You barely made it back to the ship…<small>lost 10% of your gold</small>');
+      save();
+      return;
+    }
+    save();
+    renderRuin();
+  } else {
+    const g = Math.round(20 + Math.random() * 40 * (1 + P.hero.lv * 0.3));
+    ruin.loot += g;
+    P.gold += g;
+    ruin.log.push(`You find a hidden cache — ${g}g!`);
+    save();
+    renderRuin();
+  }
+}
+
+function ruinTreasure() {
+  const r = ruin.data;
+  const g = Math.round(150 + Math.random() * 150 * (1 + P.hero.lv * 0.3));
+  const exp = 15 + P.hero.lv * 5;
+  P.gold += g;
+  P.hero.exp += exp;
+  while (P.hero.exp >= P.hero.lv * 20) {
+    P.hero.exp -= P.hero.lv * 20;
+    P.hero.lv++;
+    P.hero.hp = heroMaxHp();
+    ruin.log.push(`Level up! ${CHARACTER_NAMES[P.character]} is now lv ${P.hero.lv}!`);
+  }
+  P.fame += 2;
+  P.ruinCd = P.ruinCd ?? {};
+  P.ruinCd[r.id] = P.days;
+  ruin.log.push(`Deep in the sanctum you find the treasure of ${r.name}: ${g}g and ${exp} exp! fame +2`);
+  ruin.loot += g;
+  save();
+  renderRuin();
+  ruin = null;
+  setTimeout(renderRuin, 2500);
+}
+
+function ruinFlee() {
+  if (!ruin) return;
+  ruin.log.push('You retreat from the ruins…');
+  renderRuin();
+  ruin = null;
+  setTimeout(renderRuin, 1200);
+}
+
+const ruinCooldown = id => (P.ruinCd?.[id] ?? -99) + 7 > P.days;
 
 // ---------------------------------------------------------------------------
 // Player state (persisted to localStorage)
@@ -2155,6 +2330,12 @@ function drawMinimap() {
     for (const p of pirates) {
       mmCtx.fillRect(p.pos.x / COLS * mm.width - 1.5, p.pos.z / ROWS * mm.height - 1.5, 3, 3);
     }
+    if (scene === 'land') {
+      mmCtx.fillStyle = '#60a5fa';   // towns in blue
+      for (const t of towns) mmCtx.fillRect(t.x / COLS * mm.width - 1.5, t.z / ROWS * mm.height - 1.5, 3, 3);
+      mmCtx.fillStyle = '#c084fc';   // ruins in purple
+      for (const r of ruins) mmCtx.fillRect(r.x / COLS * mm.width - 1.5, r.z / ROWS * mm.height - 1.5, 3, 3);
+    }
   } else {
     mmCtx.clearRect(0, 0, mm.width, mm.height);
     mmCtx.drawImage(mmPort, 0, 0, mm.width, mm.height);   // stretch to fit — show the whole port
@@ -2240,6 +2421,7 @@ function onAshoreKey() {
 
 function onEscapeKey() {
   if (discoveryPanel.style.display === 'block') { discoveryPanel.style.display = 'none'; return; }
+  if (townOpen) { closeTown(); return; }
   if (closeTopPanel()) return;
   if (scene === 'port') {
     if (inBuilding) hideBuildingPanel();
@@ -2514,6 +2696,9 @@ window.UW = {
   hurtEnemy: n => { if (battle) battle.enemy.hull -= n; },
   setNoAutoSpawn: v => { noAutoSpawn = v; },
   landOn, reboard, startLandBattle, landBattleTurn,
+  openTown, startRuin, ruinNext,
+  getTown: () => nearestTown(), getRuin: () => nearestRuin(),
+  getRuinRun: () => ruin,
   getScene2: () => scene,
   getLandBattle: () => landBattle && { name: landBattle.enemy.name, hp: landBattle.enemy.hp },
   hurtEnemyCrew: n => { if (battle) battle.enemy.crew -= n; },
@@ -2543,6 +2728,8 @@ window.UW = {
   document.getElementById('char-name').textContent = CHARACTER_NAMES[P.character];
 }
 
+document.getElementById('ruin-continue').onclick = () => ruinNext();
+document.getElementById('ruin-leave').onclick = () => ruinFlee();
 document.getElementById('lb-attack').onclick = () => landBattleTurn('attack');
 document.getElementById('lb-balm').onclick = () => landBattleTurn('balm');
 document.getElementById('lb-run').onclick = () => landBattleTurn('run');
@@ -2583,7 +2770,7 @@ function tick() {
 
   // --- movement input ---
   let dx = 0, dz = 0;
-  const panelOpen = discoveryPanel.style.display === 'block' || inBuilding || anyPanelOpen() || !!landBattle;
+  const panelOpen = discoveryPanel.style.display === 'block' || inBuilding || anyPanelOpen() || !!landBattle || townOpen || !!ruin;
   if (started && !panelOpen) {
     if (keys['w'] || keys['arrowup']) dz -= 1;
     if (keys['s'] || keys['arrowdown']) dz += 1;
@@ -2720,7 +2907,12 @@ function tick() {
     camera.lookAt(landPos.x, 0, landPos.z);
 
     const nearShip = Math.hypot(landPos.x - shipPos.x, landPos.z - shipPos.z) <= 2.5;
-    showHint(landBattle ? null
+    const t = nearestTown(), ru = nearestRuin();
+    showHint(landBattle || townOpen || ruin ? null
+             : t ? `<span class="key">E</span> enter ${t.name}`
+             : ru ? (ruinCooldown(ru.id)
+                     ? `${ru.name} — already explored (returns in ${Math.ceil((P.ruinCd[ru.id] + 7) - P.days)}d)`
+                     : `<span class="key">E</span> explore ${ru.name}`)
              : nearShip ? `<span class="key">L</span> re-board your ship`
              : null);
 

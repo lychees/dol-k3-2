@@ -54,7 +54,7 @@ with sync_playwright() as p:
     page.click("#dev-tabs button:has-text('Discoveries')")
     page.wait_for_timeout(300)
     n = page.evaluate("document.querySelectorAll('#dev-content .mate-card').length")
-    check(f"98 discoveries ({n})", n == 98)
+    check(f"110 discoveries ({n})", n == 110)
     check("discovery shows coords", "°" in page.inner_text("#dev-content"))
 
     # teleport

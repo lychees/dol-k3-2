@@ -203,6 +203,25 @@
   <div class="close-hint"><span class="key">E</span>/<span class="key">Esc</span> close</div>
 </div>
 
+<div class="panel" id="town-panel">
+  <h2 id="town-name"></h2>
+  <p id="town-text"></p>
+  <div id="town-actions"></div>
+  <div class="close-hint"><span class="key">Esc</span> leave town</div>
+</div>
+
+<div class="panel" id="ruin-panel">
+  <h2 id="ruin-name"></h2>
+  <p id="ruin-stage" style="color:#bba;font-size:13px"></p>
+  <div id="ruin-log" style="max-height:180px;overflow-y:auto;text-align:left;font-size:14px;
+       background:rgba(0,0,0,.4);border:1px solid #2a3444;border-radius:6px;padding:8px 12px;margin:8px 0"></div>
+  <p id="ruin-loot" style="color:#ffd94d"></p>
+  <div>
+    <button id="ruin-continue">Continue</button>
+    <button id="ruin-leave">Leave</button>
+  </div>
+</div>
+
 <div class="panel" id="land-battle">
   <h2 id="lb-enemy-name"></h2>
   <canvas id="lb-enemy-img" width="147" height="147"
