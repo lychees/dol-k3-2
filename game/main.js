@@ -390,16 +390,189 @@ function closeTopPanel() {
 }
 
 // ---------------------------------------------------------------------------
+// Texas Hold'em (德州扑克) in the bar: heads-up vs the dealer
+// ---------------------------------------------------------------------------
+const pokerPanel = document.getElementById('poker-panel');
+let pk = null;
+
+// --- 7-card hand evaluation: returns [category, ...tiebreakers] ---
+const PK_HANDS = ['High Card', 'One Pair', 'Two Pair', 'Three of a Kind', 'Straight',
+                  'Flush', 'Full House', 'Four of a Kind', 'Straight Flush'];
+function evalHand(cards) {
+  const ranks = cards.map(cardRank).sort((a, b) => b - a);
+  const suits = cards.map(c => Math.floor((c - 1) / 13));
+  const cnt = {};
+  for (const r of ranks) cnt[r] = (cnt[r] ?? 0) + 1;
+  const groups = Object.entries(cnt).map(([r, n]) => [+r, n])
+    .sort((a, b) => b[1] - a[1] || b[0] - a[0]);
+  const suitCnt = [0, 0, 0, 0];
+  for (const s of suits) suitCnt[s]++;
+  const flushSuit = suitCnt.findIndex(n => n >= 5);
+  const straightOf = rs => {
+    const u = [...new Set(rs)].sort((a, b) => b - a);
+    for (let i = 0; i + 4 < u.length; i++) if (u[i] - u[i + 4] === 4) return u[i];
+    if (u.includes(14) && [2, 3, 4, 5].every(r => u.includes(r))) return 5;   // wheel
+    return 0;
+  };
+  const straight = straightOf(ranks);
+  const kickers = n => groups.filter(g => g[1] === 1).map(g => g[0]).slice(0, n);
+  if (flushSuit >= 0) {
+    const sf = straightOf(cards.filter(c => Math.floor((c - 1) / 13) === flushSuit)
+                              .map(cardRank));
+    if (sf) return [8, sf];
+  }
+  if (groups[0][1] === 4) return [7, groups[0][0], ...kickers(1)];
+  if (groups[0][1] === 3 && groups[1]?.[1] === 2) return [6, groups[0][0], groups[1][0]];
+  if (flushSuit >= 0) return [5, ...ranks.slice(0, 5)];
+  if (straight) return [4, straight];
+  if (groups[0][1] === 3) return [3, groups[0][0], ...kickers(2)];
+  if (groups[0][1] === 2 && groups[1]?.[1] === 2) return [2, groups[0][0], groups[1][0], ...kickers(1)];
+  if (groups[0][1] === 2) return [1, groups[0][0], ...kickers(3)];
+  return [0, ...ranks.slice(0, 5)];
+}
+const cmpHands = (a, b) => {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (a[i] ?? 0) - (b[i] ?? 0);
+    if (d) return d;
+  }
+  return 0;
+};
+
+// --- dealer AI: rough strength estimate ---
+function aiStrength() {
+  const all = pk.board.concat(pk.dealer);
+  if (pk.board.length >= 3) {
+    const [cat, ...tb] = evalHand(all);
+    let s = cat * 10 + (tb[0] ?? 0) / 14 * 3;
+    // draw bonuses
+    const suits = all.map(c => Math.floor((c - 1) / 13));
+    if ([0, 1, 2, 3].some(x => suits.filter(y => y === x).length === 4)) s += 2;
+    const rs = [...new Set(all.map(cardRank))];
+    if (rs.length >= 4 && (rs[0] - rs[3] === 3)) s += 1.5;
+    return s;
+  }
+  // preflop hole-card heuristic
+  const [a, b] = pk.dealer.map(cardRank).sort((x, y) => y - x);
+  const suited = Math.floor((pk.dealer[0] - 1) / 13) === Math.floor((pk.dealer[1] - 1) / 13);
+  let s = a === b ? 8 + a / 2 : a / 3 + (suited ? 1.5 : 0) + (a - b === 1 ? 1 : 0);
+  return s;
+}
+// AI answers a raise: 'call' or 'fold'
+const aiAnswer = () => aiStrength() >= 8 + Math.random() * 6 ? 'call' : 'fold';
+
+function openPoker() {
+  pk = { deck: bjNewDeck(), dealer: [], player: [], board: [], pot: 0,
+         toCall: 0, stage: 'preflop', msg: '', state: 'act', hidden: true };
+  // blinds: player SB 10, dealer BB 20
+  P.gold -= 10;
+  pk.pot = 30;
+  pk.toCall = 10;
+  pk.player = [pk.deck.pop(), pk.deck.pop()];
+  pk.dealer = [pk.deck.pop(), pk.deck.pop()];
+  pk.msg = 'Blinds posted (you 10 / dealer 20). Your action.';
+  save();
+  renderPoker();
+}
+function closePoker() {
+  if (!pk) return;
+  pk = null;
+  pokerPanel.style.display = 'none';
+}
+
+function pkNextStreet() {
+  if (pk.stage === 'preflop') pk.board = [pk.deck.pop(), pk.deck.pop(), pk.deck.pop()];
+  else pk.board.push(pk.deck.pop());
+  pk.stage = { preflop: 'flop', flop: 'turn', turn: 'river' }[pk.stage];
+  pk.toCall = 0;
+  pk.msg = `${pk.stage.toUpperCase()} — check or raise.`;
+  pk.state = 'act';
+}
+
+function pkAction(kind) {
+  if (!pk || pk.state !== 'act') return;
+  if (kind === 'fold') return pkSettle('fold');
+  if (kind === 'raise') {
+    if (P.gold < 50) return;
+    P.gold -= 50;
+    pk.pot += 50;
+    if (aiAnswer() === 'fold') return pkSettle('aifold');
+    pk.pot += 50;   // AI calls
+    pk.msg = 'Dealer calls your raise.';
+  } else {
+    // check/call
+    if (pk.toCall > 0) {
+      P.gold -= pk.toCall;
+      pk.pot += pk.toCall;
+    }
+    pk.msg = pk.toCall > 0 ? `You call ${pk.toCall}g.` : 'Check.';
+  }
+  save();
+  if (pk.stage === 'river') return pkSettle('showdown');
+  pkNextStreet();
+  renderPoker();
+}
+
+function pkSettle(result) {
+  pk.state = 'done';
+  pk.hidden = false;
+  if (result === 'fold') {
+    pk.msg = `You folded. Dealer takes the ${pk.pot}g pot.`;
+  } else if (result === 'aifold') {
+    P.gold += pk.pot;
+    pk.msg = `Dealer folds! You take the ${pk.pot}g pot.`;
+  } else {
+    const ph = evalHand(pk.player.concat(pk.board));
+    const dh = evalHand(pk.dealer.concat(pk.board));
+    const cmp = cmpHands(ph, dh);
+    const line = `${PK_HANDS[ph[0]]} vs ${PK_HANDS[dh[0]]}`;
+    if (cmp > 0) { P.gold += pk.pot; pk.msg = `${line} — you win the ${pk.pot}g pot!`; }
+    else if (cmp < 0) pk.msg = `${line} — dealer wins the ${pk.pot}g pot.`;
+    else { P.gold += Math.floor(pk.pot / 2); pk.msg = `${line} — split pot (${Math.floor(pk.pot / 2)}g each).`; }
+  }
+  save();
+  renderPoker();
+}
+
+function renderPoker() {
+  if (!pk) { pokerPanel.style.display = 'none'; return; }
+  pokerPanel.style.display = 'block';
+  document.getElementById('pk-dealer').innerHTML =
+    pk.dealer.map(c => bjCardHtml(c, pk.hidden)).join('');
+  document.getElementById('pk-board').innerHTML = pk.board.map(c => bjCardHtml(c)).join('') || '—';
+  document.getElementById('pk-player').innerHTML = pk.player.map(c => bjCardHtml(c)).join('');
+  document.getElementById('pk-pot').textContent = pk.pot;
+  document.getElementById('pk-tocall').textContent = pk.toCall > 0 ? `to call: ${pk.toCall}g` : '';
+  document.getElementById('pk-msg').textContent = pk.msg;
+  const acts = document.getElementById('pk-actions');
+  acts.innerHTML = '';
+  const mk = (label, fn, disabled = false) => {
+    const b = document.createElement('button');
+    b.textContent = label; b.disabled = disabled; b.onclick = fn;
+    acts.appendChild(b);
+  };
+  if (pk.state === 'act') {
+    mk('Fold', () => pkAction('fold'));
+    mk(pk.toCall > 0 ? `Call ${pk.toCall}g` : 'Check', () => pkAction('call'), P.gold < pk.toCall);
+    mk('Raise 50g', () => pkAction('raise'), P.gold < 50);
+  } else {
+    mk('Next hand', () => openPoker(), P.gold < 10);
+    mk('Leave table', () => closePoker());
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Blackjack (21点) in the bar
 // ---------------------------------------------------------------------------
 const bjPanel = document.getElementById('blackjack-panel');
 let bj = null;   // {deck, dealer, player, bet, state, hideHole}
 
 const BJ_SUITS = ['♠', '♥', '♦', '♣'];
-const bjValue = c => Math.min(c, 10);
+// card id = suit*13 + rank(1..13); poker rank: 2-14 with ace high
+const cardRank = c => { const r = (c - 1) % 13 + 1; return r === 1 ? 14 : r; };
+const bjValue = c => Math.min((c - 1) % 13 + 1, 10);
 function bjTotal(hand) {
   let total = 0, aces = 0;
-  for (const c of hand) { total += bjValue(c); if (c === 1) aces++; }
+  for (const c of hand) { total += bjValue(c); if ((c - 1) % 13 === 0) aces++; }
   while (aces && total + 10 <= 21) { total += 10; aces--; }
   return total;
 }
@@ -1493,6 +1666,7 @@ function buildingMenu(b) {
       if (maidId && maidsData[maidId]) {
         menu.push({ label: `Talk to the waitress`, action() { return talkToMaid(maidId); } });
       }
+      menu.push({ label: "Play Texas Hold'em (德州扑克)", action() { openPoker(); } });
       menu.push({ label: 'Play blackjack (21点)', action() { openBlackjack(); } });
       menu.push({ label: 'Manage mates & cabins', action() { openPanel('mates'); } });
       return menu;
@@ -1661,6 +1835,7 @@ function hideBuildingPanel() {
   buildingPanel.style.display = 'none';
   pendingHire = null;
   closeBlackjack();
+  closePoker();
   closeBuildingSubPanels();
   if (inBuilding && ['bar', 'church', 'palace'].includes(inBuilding.name)) {
     playMusic(portMusicFor(portId));
@@ -2713,6 +2888,7 @@ function onAshoreKey() {
 function onEscapeKey() {
   if (discoveryPanel.style.display === 'block') { discoveryPanel.style.display = 'none'; return; }
   if (bj) { closeBlackjack(); return; }
+  if (pk) { closePoker(); return; }
   if (townOpen) { closeTown(); return; }
   if (closeTopPanel()) return;
   if (scene === 'port') {
@@ -2991,6 +3167,9 @@ window.UW = {
   landOn, reboard, startLandBattle, landBattleTurn,
   openTown, startRuin, ruinNext,
   openBlackjack, bjDeal, bjHit, bjStand, getBj: () => bj && { state: bj.state, player: bjTotal(bj.player), msg: bj.msg },
+  openPoker, pkAction, evalHand, cmpHands,
+  getPk: () => pk && { stage: pk.stage, state: pk.state, pot: pk.pot, toCall: pk.toCall,
+                       board: pk.board.length, msg: pk.msg },
   getTown: () => nearestTown(), getRuin: () => nearestRuin(),
   getRuinRun: () => ruin,
   getScene2: () => scene,
@@ -3064,7 +3243,7 @@ function tick() {
 
   // --- movement input ---
   let dx = 0, dz = 0;
-  const panelOpen = discoveryPanel.style.display === 'block' || inBuilding || anyPanelOpen() || !!landBattle || townOpen || !!ruin || !!bj;
+  const panelOpen = discoveryPanel.style.display === 'block' || inBuilding || anyPanelOpen() || !!landBattle || townOpen || !!ruin || !!bj || !!pk;
   if (started && !panelOpen) {
     if (keys['w'] || keys['arrowup']) dz -= 1;
     if (keys['s'] || keys['arrowdown']) dz += 1;

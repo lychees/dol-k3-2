@@ -340,6 +340,15 @@ the uw2ol project, which took them from the original Uncharted Waters 2
   proper deck shuffle, soft aces, hidden hole card until stand, dealer
   draws to 17, payouts: blackjack 2.5x, win 2x, push 1x. Next hand or
   leave (Esc).
+### 23. 德州扑克 + 卡牌点数修正
+- **Texas Hold'em in the bar**: heads-up vs dealer AI. Blinds (player
+  SB 10 / dealer BB 20), four streets (preflop/flop/turn/river), one
+  decision per street (Fold / Check·Call / Raise 50), strength-based
+  dealer AI, full 7-card hand evaluation (high card → straight flush
+  with wheel and proper tiebreakers), split pots.
+- **Card rank bug**: with ids suit*13+rank, bjValue/evalHand miscounted
+  ranks (ace treated as 2, king as 14, ids >13 all counted 10 in
+  blackjack). Shared `cardRank` helper fixes both games (ace-high).
 ## Key file formats (cheat sheet)
 
 | Data | Format |
