@@ -2,3 +2,6 @@ uw2ol/
 __pycache__/
 *.pyc
 /tmp
+server/uw_server.db*
+server/.venv/
+server/**/__pycache__/
