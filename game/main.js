@@ -636,7 +636,7 @@ let landBattle = null;    // {enemy, log[], round}
 let encounterT = 2;       // seconds of walking before next possible encounter
 
 const heroMaxHp = () => 20 + 8 * P.hero.lv;
-const heroAtk = () => 4 + 2 * P.hero.lv + [0, 4, 8, 14][P.hero.weapon];
+const heroAtk = () => Math.max(1, Math.round((4 + 2 * P.hero.lv + [0, 4, 8, 14][P.hero.weapon]) * (P.fatigue >= 90 ? 0.75 : 1)));
 const heroDef = () => Math.floor(P.hero.lv / 2) + [0, 2, 5, 9][P.hero.armor];
 const mateMaxHp = id => 15 + 5 * (matesData[id]?.lv ?? 1);
 const mateAtk = id => 3 + (matesData[id]?.lv ?? 1) + Math.floor((matesData[id]?.swordplay ?? 0) / 20);
@@ -1070,6 +1070,21 @@ delete P.ship;
 delete P.hull;
 P.cargoCost = P.cargoCost ?? {};
 if (P.character > CHARACTER_NAMES.length - 1) P.character = 0;
+// migrate global cabins (pre-UW4) into per-ship assignments
+if (P.cabins) {
+  const MAP = { navigator: 'navigation', gunner: 'gunnery', accountant: 'accounting',
+                lookout: 'lookout', surgeon: 'sickbay', boatswain: 'kitchen' };
+  P.shipCabins = P.shipCabins ?? {};
+  for (const [slot, id] of Object.entries(P.cabins)) {
+    if (!id || !P.fleet.length) continue;
+    const type = MAP[slot] ?? slot;
+    const cabins = cabinsOf(0);
+    let j = cabins.indexOf(type);
+    if (j < 0) { j = cabins.length - 1; cabins[j] = type; }
+    P.shipCabins[id] = cabinKey(0, j);
+  }
+  delete P.cabins;
+}
 
 const flag = () => P.fleet[0];                      // flagship
 const curShip = () => shipByName(flag().ship);      // flagship's type
@@ -1100,16 +1115,66 @@ const fleetMinCrew = () => P.fleet.reduce((a, f) => a + shipByName(f.ship).minCr
 const fleetMaxCrew = () => P.fleet.reduce((a, f) => a + shipByName(f.ship).maxCrew, 0);
 const fleetSpeed = () => Math.min(...P.fleet.map(f => shipStats(f).speed));
 
-// --- mates / cabins / equipment bonuses --------------------------------------
-const cabinMate = slot => P.cabins[slot] ? matesData[P.cabins[slot]] : null;
-const navBonus = () => 1 + (cabinMate('navigator')?.navigation ?? 0) * 0.05;
-const accBonus = () => 1 + (cabinMate('accountant')?.accounting ?? 0) * 0.05;
-const lookoutRange = () => (cabinMate('lookout')?.intuition ?? 0) * 0.5;
-const surgeonFactor = () => 1 - (cabinMate('surgeon')?.knowledge ?? 0) * 0.05;
-const boatswainFactor = () => 1 - (cabinMate('boatswain')?.seamanship ?? 0) * 0.05;
+// --- UW4 cabins: each ship has refittable cabin slots; mates are assigned ---
+const CABIN_TYPES = {
+  captain:    { label: 'Captain',   stat: 'leadership', desc: '+1% melee / pt' },
+  navigation: { label: 'Navigator', stat: 'navigation', desc: '+5% speed / pt' },
+  deck:       { label: 'Deck',      stat: 'seamanship', desc: '+2% speed / pt' },
+  gunnery:    { label: 'Gunnery',   stat: 'gunnery',    desc: '+10% damage / pt' },
+  accounting: { label: 'Purser',    stat: 'accounting', desc: '+5% sell / pt' },
+  lookout:    { label: 'Lookout',   stat: 'intuition',  desc: '+0.5 sight / pt' },
+  sickbay:    { label: 'Sick bay',  stat: 'knowledge',  desc: '-5% fatigue / pt' },
+  kitchen:    { label: 'Kitchen',   stat: 'seamanship', desc: '-5% food / pt' },
+  chapel:     { label: 'Chapel',    stat: 'luck',       desc: '-3% fatigue / pt' },
+};
+const CABIN_COUNT = cargo => (cargo <= 12 ? 2 : cargo <= 25 ? 3 : cargo <= 60 ? 4 : 5);
+const CABIN_DEFAULTS = ['deck', 'navigation', 'gunnery', 'lookout', 'kitchen'];
+
+function cabinsOf(i) {
+  const f = P.fleet[i];
+  const n = CABIN_COUNT(shipByName(f.ship).cargo);
+  if (!f.cabins) f.cabins = CABIN_DEFAULTS.slice(0, n);
+  return f.cabins;
+}
+P.fleet.forEach((f, i) => cabinsOf(i));   // make sure every ship has its cabins
+P.shipCabins = P.shipCabins ?? {};                    // mateId -> "shipIdx:slotIdx"
+const cabinKey = (i, j) => `${i}:${j}`;
+const assignedMate = (i, j) =>
+  Object.entries(P.shipCabins).find(([, k]) => k === cabinKey(i, j))?.[0] ?? null;
+const mateCabin = id => P.shipCabins[id] ?? null;
+
+function assignMate(id, key) {
+  delete P.shipCabins[id];
+  if (key) {
+    for (const [other, k] of Object.entries(P.shipCabins)) {
+      if (k === key && +other !== id) delete P.shipCabins[other];   // one mate per cabin
+    }
+    P.shipCabins[id] = key;
+  }
+  save();
+}
+// best value of `stat` among mates assigned to cabins of `type` (fleet-wide)
+function bestInCabins(type, stat) {
+  let best = 0;
+  for (const [idStr, key] of Object.entries(P.shipCabins)) {
+    const [i, j] = key.split(':').map(Number);
+    if (P.fleet[i] && cabinsOf(i)[j] === type) {
+      best = Math.max(best, matesData[idStr]?.[stat] ?? 0);
+    }
+  }
+  return best;
+}
+
+const navBonus = () => 1 + bestInCabins('navigation', 'navigation') * 0.05
+                        + bestInCabins('deck', 'seamanship') * 0.02;
+const accBonus = () => 1 + bestInCabins('accounting', 'accounting') * 0.05;
+const lookoutRange = () => bestInCabins('lookout', 'intuition') * 0.5;
+const surgeonFactor = () => 1 - bestInCabins('sickbay', 'knowledge') * 0.05;
+const boatswainFactor = () => 1 - bestInCabins('kitchen', 'seamanship') * 0.05;
+const chapelFactor = () => 1 - bestInCabins('chapel', 'luck') * 0.03;
 const sailBonus = () => 1 + [0, 0.05, 0.1, 0.15][P.equipment.sails];
 const CANNON_MULT = [1, 1.3, 1.6, 2];
-const gunBonus = () => (1 + (cabinMate('gunner')?.gunnery ?? 0) * 0.1) * CANNON_MULT[P.equipment.cannons];
+const gunBonus = () => (1 + bestInCabins('gunnery', 'gunnery') * 0.1) * CANNON_MULT[P.equipment.cannons];
 const crewOk = () => P.crew >= fleetMinCrew();
 const battleDmg = () => fleetGuns() / 4 * gunBonus() * (crewOk() ? 1 : 0.5);
 
@@ -1144,12 +1209,32 @@ function speedFactor() {
   return 1;
 }
 
+// UW3-style terrain bands by latitude (land expeditions)
+function terrainAt(z) {
+  const lat = Math.abs(-0.13063 * z + 85.84);
+  if (lat > 55) return 'snow';
+  if (lat < 15) return 'jungle';
+  if (lat < 32) return 'desert';
+  return 'plains';
+}
+
 function onNewDay() {
   P.days++;
   P.bank = Math.floor(P.bank * 1.02);          // 2% daily interest
+  if (scene === 'land') {
+    // expeditions eat and tire like in UW3
+    const terrain = terrainAt(landPos.z);
+    const drain = terrain === 'snow' ? 4 : terrain === 'plains' ? 6 : 10;
+    P.provisions = Math.max(0, P.provisions - drain * boatswainFactor());
+    P.fatigue = Math.min(100, P.fatigue + (terrain === 'snow' ? 18 : 10) * (P.equipment.figurehead ? 0.5 : 1) * surgeonFactor());
+    if (P.provisions <= 0) {
+      P.hero.hp = Math.max(1, P.hero.hp - 3);
+      showBanner('Out of provisions!<small>the expedition is starving — find a town or your ship</small>');
+    }
+  }
   if (scene === 'sea') {
     P.provisions = Math.max(0, P.provisions - 8 * boatswainFactor());
-    P.fatigue = Math.min(100, P.fatigue + 12 * (P.equipment.figurehead ? 0.5 : 1) * surgeonFactor());
+    P.fatigue = Math.min(100, P.fatigue + 12 * (P.equipment.figurehead ? 0.5 : 1) * surgeonFactor() * chapelFactor());
     flag().hull = Math.max(0, flag().hull - 1);
     if (P.provisions <= 0) {
       flag().hull = Math.max(0, flag().hull - 5);
@@ -1650,7 +1735,8 @@ function renderShipyard() {
       P.gold < s.price || P.fleet.length >= 5 || cargoUsed() > fleetCargoCap() + s.cargo,
       () => {
         P.gold -= s.price;
-        P.fleet.push({ ship: s.name, hull: s.hull });
+        P.fleet.push({ ship: s.name, hull: s.hull,
+                       cabins: CABIN_DEFAULTS.slice(0, CABIN_COUNT(s.cargo)) });
         save(); renderShipyard();
       }, P.fleet.length >= 5 ? 'fleet is full (5 ships)' : '');
   });
@@ -1689,6 +1775,31 @@ function renderRefit(div) {
         save(); renderShipyard();
       });
   });
+  // --- cabin refit (UW4): change this ship's cabin types ---
+  const cabins = cabinsOf(refitIdx);
+  let chtml = '<h3 style="color:#ffd94d;margin:8px 0 4px">Cabins</h3>' +
+    '<table><tr><th>cabin</th><th>type</th><th></th></tr>';
+  cabins.forEach((type, j) => {
+    chtml += `<tr><td>#${j + 1}</td><td>${CABIN_TYPES[type].label} <small>(${CABIN_TYPES[type].desc})</small></td><td></td></tr>`;
+  });
+  div.innerHTML += chtml + '</table>';
+  const ctrs = div.querySelectorAll('table')[1].querySelectorAll('tr');
+  cabins.forEach((type, j) => {
+    const td = ctrs[j + 1].lastChild;
+    const sel = document.createElement('select');
+    sel.innerHTML = Object.entries(CABIN_TYPES)
+      .map(([k, t]) => `<option value="${k}"${k === type ? ' selected' : ''}>${t.label}</option>`).join('');
+    sel.value = type;
+    td.appendChild(sel);
+    rowButton(td, `refit 500g`, P.gold < 500, () => {
+      if (sel.value === type) return;
+      // unassign any mate in that cabin when its type changes? keep them — UW4 keeps crew
+      P.gold -= 500;
+      cabins[j] = sel.value;
+      save(); renderShipyard();
+    });
+  });
+
   // back row
   const back = document.createElement('button');
   back.textContent = '← back to shipyard';
@@ -1703,60 +1814,76 @@ definePanel('shipyard', shipyardPanel, { building: true, render: renderShipyard,
 // Mates & cabins panel
 // ---------------------------------------------------------------------------
 const matesPanel = document.getElementById('mates-panel');
-const CABINS = [['navigator', 'Navigator', '+5% speed / pt'],
-                ['gunner', 'Gunner', '+10% damage / pt'],
-                ['accountant', 'Accountant', '+5% sell / pt'],
-                ['lookout', 'Lookout', '+0.5 sight / pt'],
-                ['surgeon', 'Surgeon', '-5% fatigue / pt'],
-                ['boatswain', 'Boatswain', '-5% food / pt']];
-
 function renderMates() {
   document.getElementById('mates-info').innerHTML =
     `sailors: <b>${P.crew}</b>/${fleetMaxCrew()} &nbsp;·&nbsp; mates: <b>${P.mates.length}</b>`;
+
+  // --- cabins by ship (UW4) ---
   const cab = document.getElementById('mates-cabins');
   cab.innerHTML = '';
-  for (const [slot, label, desc] of CABINS) {
-    const m = cabinMate(slot);
-    const div = document.createElement('div');
-    div.className = 'cabin';
-    div.innerHTML = `<b>${label}</b><br>${m ? m.name : '—'}<br><small>${desc}</small>`;
-    cab.appendChild(div);
-  }
+  P.fleet.forEach((f, i) => {
+    cabinsOf(i).forEach((type, j) => {
+      const t = CABIN_TYPES[type];
+      const mid = assignedMate(i, j);
+      const m = mid != null ? matesData[mid] : null;
+      const div = document.createElement('div');
+      div.className = 'cabin';
+      div.innerHTML = `<small>${i === 0 ? '★ ' : ''}${f.ship}</small><br><b>${t.label}</b><br>` +
+        `${m ? `${m.name} <small>(${t.stat} ${m[t.stat]})</small>` : '—'}<br><small>${t.desc}</small>`;
+      if (m) {
+        const b = document.createElement('button');
+        b.textContent = '×';
+        b.title = 'unassign';
+        b.onclick = () => { assignMate(+mid, null); renderMates(); };
+        div.appendChild(b);
+      }
+      cab.appendChild(div);
+    });
+  });
+
+  // --- mate cards with cabin assignment dropdown ---
   const div = document.getElementById('mates-table');
   div.innerHTML = '';
   if (!P.mates.length) {
     div.innerHTML = '<p>No mates yet — meet them in bars around the world.</p>';
     return;
   }
+  const cabinOptions = exceptId => {
+    const opts = ['<option value="">—</option>'];
+    P.fleet.forEach((f, i) => {
+      cabinsOf(i).forEach((type, j) => {
+        const occ = assignedMate(i, j);
+        if (occ != null && +occ !== exceptId) return;   // occupied by someone else
+        const sel = mateCabin(exceptId) === cabinKey(i, j) ? ' selected' : '';
+        opts.push(`<option value="${i}:${j}"${sel}>${f.ship} · ${CABIN_TYPES[type].label}</option>`);
+      });
+    });
+    return opts.join('');
+  };
   for (const id of P.mates) {
     const m = matesData[id];
     const card = document.createElement('div');
     card.className = 'mate-card';
     card.innerHTML = `<img src="${figureUrl(...m.image)}" alt="">` +
       `<div class="mate-stats"><b>${m.name}</b> · ${m.nation} · lv ${m.lv}<br>` +
-      `lead ${m.leadership} seam ${m.seamanship} luck ${m.luck}<br>` +
+      `lead ${m.leadership} seam ${m.seamanship} know ${m.knowledge} int ${m.intuition} ` +
+      `cour ${m.courage} sword ${m.swordplay} luck ${m.luck}<br>` +
       `nav ${m.navigation} gun ${m.gunnery} acc ${m.accounting}</div>`;
-    const btns = document.createElement('div');
-    for (const [slot, label] of CABINS) {
-      const b = document.createElement('button');
-      b.textContent = label.slice(0, 3);
-      b.title = `assign as ${label}`;
-      b.disabled = P.cabins[slot] === id;
-      b.onclick = () => {
-        for (const [s] of CABINS) if (P.cabins[s] === id) P.cabins[s] = null;
-        P.cabins[slot] = id;
-        save(); renderMates();
-      };
-      btns.appendChild(b);
-    }
+    const sel = document.createElement('select');
+    sel.innerHTML = cabinOptions(id);
+    sel.value = mateCabin(id) ?? '';
+    sel.onchange = () => { assignMate(id, sel.value || null); renderMates(); };
+    sel.title = 'assign to a cabin';
     const dismiss = document.createElement('button');
     dismiss.textContent = '\u2715';
     dismiss.title = 'dismiss';
     dismiss.onclick = () => {
+      assignMate(id, null);
       P.mates = P.mates.filter(x => x !== id);
-      for (const [s] of CABINS) if (P.cabins[s] === id) P.cabins[s] = null;
       save(); renderMates();
     };
+    const btns = document.createElement('div');
+    btns.appendChild(sel);
     btns.appendChild(dismiss);
     card.appendChild(btns);
     div.appendChild(card);
@@ -1844,7 +1971,10 @@ const MENU_RENDER = {
   },
   crew() {
     let html = `<p>sailors: <b>${P.crew}</b>/${fleetMaxCrew()} (minimum ${fleetMinCrew()})</p><p>` +
-      CABINS.map(([slot, label]) => `<b>${label}</b>: ${cabinMate(slot)?.name ?? '—'}`).join(' · ') + '</p>';
+      P.fleet.map((f, i) => cabinsOf(i).map((type, j) => {
+        const mid = assignedMate(i, j);
+        return `${i === 0 ? '★' : ''}${f.ship}/${CABIN_TYPES[type].label}: <b>${mid != null ? matesData[mid].name : '—'}</b>`;
+      }).join(' · ')).join('<br>') + '</p>';
     if (!P.mates.length) return html + '<p>No mates yet — meet them in bars.</p>';
     for (const id of P.mates) {
       const m = matesData[id];
@@ -2013,8 +2143,8 @@ function fireBall(fromPos, targetPos, dmg, fromPlayer) {
 // best swordplay among assigned cabin mates drives melee power
 const meleeFactor = () => {
   let sw = 0;
-  for (const [slot] of CABINS) sw = Math.max(sw, cabinMate(slot)?.swordplay ?? 0);
-  return 1 + sw / 100;
+  for (const id of Object.keys(P.shipCabins)) sw = Math.max(sw, matesData[id]?.swordplay ?? 0);
+  return 1 + sw / 100 + bestInCabins('captain', 'leadership') * 0.01;
 };
 
 function canBoard() {
@@ -2955,7 +3085,7 @@ function tick() {
     hudTop.innerHTML =
       `<b>${CHARACTER_NAMES[P.character]}</b> lv ${P.hero.lv} · hp ${P.hero.hp}/${heroMaxHp()}<br>` +
       `exp ${P.hero.exp}/${P.hero.lv * 20} · day ${P.days}<br>` +
-      `<b>${fmtLonLat(landPos.x, landPos.z)}</b> · on foot`;
+      `<b>${fmtLonLat(landPos.x, landPos.z)}</b> · on foot · ${terrainAt(landPos.z)} · food ${Math.floor(P.provisions)}`;
   }
 
   // --- banner fade ---

@@ -65,18 +65,18 @@ with sync_playwright() as p:
     check("fleet cargo = sum of ships",
           page.evaluate("window.UW.P.fleet.length") == 4)
 
-    # --- extra cabins: assign lookout/surgeon/boatswain ---
+    # --- UW4 per-ship cabins: assign a lookout for the sight bonus ---
     page.evaluate("""() => {
       window.UW.P.mates = [1, 2, 3];
-      window.UW.P.cabins = { navigator: null, gunner: null, accountant: null,
-                             lookout: 1, surgeon: 2, boatswain: 3 };
+      window.UW.P.fleet[0].cabins = ['deck', 'lookout'];
+      window.UW.P.shipCabins = { '1': '0:1' };   // mate 1 (intuition 50) as lookout
       window.UW.save();
     }""")
     open_bar = page.evaluate("window.UW.openBuilding(window.UW.getBuildings().find(x => x.name === 'bar'))")
     page.click("#building-actions button:has-text('Manage mates')")
     page.wait_for_timeout(400)
     n_cabins = page.evaluate("document.querySelectorAll('#mates-cabins .cabin').length")
-    check(f"6 cabin slots shown ({n_cabins})", n_cabins == 6)
+    check(f"cabins shown for whole fleet ({n_cabins})", n_cabins > 6)
     page.screenshot(path="tests/screenshots/cabins6.png")
     page.keyboard.press("Escape"); page.wait_for_timeout(200)
     page.keyboard.press("Escape"); page.wait_for_timeout(200)

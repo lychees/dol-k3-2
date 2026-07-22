@@ -317,6 +317,19 @@ the uw2ol project, which took them from the original Uncharted Waters 2
 - Bug found: the land branch of the E handler (town/ruin entry) had been
   lost in an earlier silent patch-replace failure; restored.
 - Debug hooks: `landTo(x, z)` for tests.
+### 21. UW3 陆地探险 + UW4 船舱
+- **UW3-style land expeditions**: terrain bands by latitude (snow >55°,
+  plains, desert 15-32°, jungle <15°). Walking on land drains provisions
+  (heavy in desert/jungle) and builds fatigue (heavy in snow); starving
+  costs hero HP daily. Land HUD shows terrain and food. High fatigue
+  (>=90) weakens the hero's attack by 25% in land battles.
+- **UW4-style cabins**: each ship has refittable cabin slots by size
+  (2/3/4/5). 9 cabin types — Captain/Navigator/Deck/Gunnery/Purser/
+  Lookout/Sick bay/Kitchen/Chapel — each driven by a different mate stat
+  (leadership, navigation, seamanship, gunnery, accounting, intuition,
+  knowledge, luck). Mates are assigned to specific ship cabins via
+  dropdowns in the Mates panel (one mate per cabin). Cabin types can be
+  changed at the dry dock for 500g. Old global-cabin saves migrate.
 ## Key file formats (cheat sheet)
 
 | Data | Format |

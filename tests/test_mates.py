@@ -69,10 +69,14 @@ with sync_playwright() as p:
     check("mates panel open", page.is_visible("#mates-panel"))
     check("mate card with portrait", page.is_visible("#mates-panel .mate-card img"))
     page.screenshot(path="tests/screenshots/mates_panel.png")
-    # John: navigation 0 -> give him navigation via assign anyway (gunnery 0 too; use mate 3 later)
-    page.click("#mates-panel .mate-card button:has-text('Nav')")
+    # assign John to the navigation cabin via the dropdown
+    page.evaluate("""() => {
+      const sel = document.querySelector('#mates-table select');
+      sel.value = '0:1';   // Balsa slot 1 = navigation
+      sel.dispatchEvent(new Event('change'));
+    }""")
     page.wait_for_timeout(300)
-    check("mate assigned as navigator", page.evaluate("window.UW.P.cabins.navigator") == 1)
+    check("mate assigned as navigator", page.evaluate("window.UW.P.shipCabins['1']") == "0:1")
     page.keyboard.press("Escape"); page.wait_for_timeout(200)
     page.keyboard.press("Escape"); page.wait_for_timeout(200)
 
@@ -81,8 +85,8 @@ with sync_playwright() as p:
     page.wait_for_timeout(200)
     page.click("#building-actions button:has-text('Buy a new ship')")
     page.wait_for_timeout(400)
-    n_imgs = page.evaluate("document.querySelectorAll('#shipyard-table img.ship-img').length")
-    loaded = page.evaluate("""Array.from(document.querySelectorAll('#shipyard-table img.ship-img'))
+    n_imgs = page.evaluate("document.querySelectorAll('#shipyard-table table')[1].querySelectorAll('img.ship-img').length")
+    loaded = page.evaluate("""Array.from(document.querySelectorAll('#shipyard-table table')[1].querySelectorAll('img.ship-img'))
       .filter(i => i.complete && i.naturalWidth > 0).length""")
     check(f"ship images shown & loaded ({loaded}/{n_imgs})", n_imgs == 22 and loaded == 22)
     page.keyboard.press("Escape"); page.wait_for_timeout(200)
