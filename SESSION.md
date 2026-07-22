@@ -330,6 +330,16 @@ the uw2ol project, which took them from the original Uncharted Waters 2
   knowledge, luck). Mates are assigned to specific ship cabins via
   dropdowns in the Mates panel (one mate per cabin). Cabin types can be
   changed at the dry dock for 500g. Old global-cabin saves migrate.
+### 22. 老存档迁移修复 + 酒馆 21 点
+- **Migration fix**: the pre-UW4 cabin migration ran before CABIN_COUNT /
+  cabinKey were initialized (TDZ crash for old saves) and could assign
+  several mates to one cabin, overwriting cabin types. Moved after the
+  helpers and made slot allocation distinct (free-slot-first, retype as
+  needed, overflow left unassigned).
+- **Blackjack in the bar**: full 21-point mini-game — bet 50/100/500g,
+  proper deck shuffle, soft aces, hidden hole card until stand, dealer
+  draws to 17, payouts: blackjack 2.5x, win 2x, push 1x. Next hand or
+  leave (Esc).
 ## Key file formats (cheat sheet)
 
 | Data | Format |

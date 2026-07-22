@@ -390,6 +390,123 @@ function closeTopPanel() {
 }
 
 // ---------------------------------------------------------------------------
+// Blackjack (21点) in the bar
+// ---------------------------------------------------------------------------
+const bjPanel = document.getElementById('blackjack-panel');
+let bj = null;   // {deck, dealer, player, bet, state, hideHole}
+
+const BJ_SUITS = ['♠', '♥', '♦', '♣'];
+const bjValue = c => Math.min(c, 10);
+function bjTotal(hand) {
+  let total = 0, aces = 0;
+  for (const c of hand) { total += bjValue(c); if (c === 1) aces++; }
+  while (aces && total + 10 <= 21) { total += 10; aces--; }
+  return total;
+}
+const bjCardHtml = (c, hide = false) => {
+  if (hide) return '<span class="bj-card back">?</span>';
+  const r = (c - 1) % 13, s = Math.floor((c - 1) / 13);
+  return `<span class="bj-card${s === 1 || s === 2 ? ' red' : ''}">${['A','2','3','4','5','6','7','8','9','10','J','Q','K'][r]}${BJ_SUITS[s]}</span>`;
+};
+
+function bjNewDeck() {
+  const d = [];
+  for (let s = 0; s < 4; s++) for (let r = 1; r <= 13; r++) d.push(s * 13 + r);
+  for (let i = d.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [d[i], d[j]] = [d[j], d[i]];
+  }
+  return d;
+}
+
+function renderBj() {
+  if (!bj) { bjPanel.style.display = 'none'; return; }
+  bjPanel.style.display = 'block';
+  document.getElementById('bj-dealer').innerHTML =
+    bj.dealer.map((c, i) => bjCardHtml(c, bj.hideHole && i === 1)).join('');
+  document.getElementById('bj-dealer-total').textContent =
+    bj.hideHole ? `${bjValue(bj.dealer[0])} + ?` : bjTotal(bj.dealer);
+  document.getElementById('bj-player').innerHTML = bj.player.map(c => bjCardHtml(c)).join('');
+  document.getElementById('bj-player-total').textContent = bjTotal(bj.player);
+  document.getElementById('bj-msg').textContent = bj.msg;
+  const acts = document.getElementById('bj-actions');
+  acts.innerHTML = '';
+  const mk = (label, fn, disabled = false) => {
+    const b = document.createElement('button');
+    b.textContent = label; b.disabled = disabled; b.onclick = fn;
+    acts.appendChild(b);
+  };
+  if (bj.state === 'bet') {
+    for (const amt of [50, 100, 500]) {
+      mk(`Bet ${amt}g`, () => bjDeal(amt), P.gold < amt);
+    }
+    mk('Leave table', () => closeBlackjack());
+  } else if (bj.state === 'player') {
+    mk('Hit', () => bjHit());
+    mk('Stand', () => bjStand());
+  } else {
+    mk('Next hand', () => { bj.state = 'bet'; bj.msg = `gold: ${P.gold}g — place your bet`; renderBj(); });
+    mk('Leave table', () => closeBlackjack());
+  }
+}
+
+function openBlackjack() {
+  bj = { deck: bjNewDeck(), dealer: [], player: [], bet: 0, state: 'bet', hideHole: false,
+         msg: `gold: ${P.gold}g — place your bet` };
+  renderBj();
+}
+function closeBlackjack() {
+  if (!bj) return;
+  bj = null;
+  renderBj();
+}
+
+function bjDeal(amt) {
+  P.gold -= amt;
+  bj.bet = amt;
+  bj.player = [bj.deck.pop(), bj.deck.pop()];
+  bj.dealer = [bj.deck.pop(), bj.deck.pop()];
+  bj.hideHole = true;
+  bj.msg = '';
+  bj.state = 'player';
+  // instant blackjack check
+  if (bjTotal(bj.player) === 21) return bjSettle('blackjack');
+  save();
+  renderBj();
+}
+
+function bjHit() {
+  bj.player.push(bj.deck.pop());
+  if (bjTotal(bj.player) > 21) return bjSettle('bust');
+  renderBj();
+}
+
+function bjStand() {
+  bj.hideHole = false;
+  while (bjTotal(bj.dealer) < 17) bj.dealer.push(bj.deck.pop());
+  const pt = bjTotal(bj.player), dt = bjTotal(bj.dealer);
+  if (dt > 21) return bjSettle('dealerbust');
+  if (pt > dt) return bjSettle('win');
+  if (pt < dt) return bjSettle('lose');
+  return bjSettle('push');
+}
+
+function bjSettle(result) {
+  bj.hideHole = false;
+  bj.state = 'done';
+  const b = bj.bet;
+  if (result === 'blackjack') { P.gold += Math.floor(b * 2.5); bj.msg = `BLACKJACK! +${Math.floor(b * 2.5)}g`; }
+  else if (result === 'dealerbust') { P.gold += b * 2; bj.msg = `Dealer busts — you win! +${b * 2}g`; }
+  else if (result === 'win') { P.gold += b * 2; bj.msg = `You win! +${b * 2}g`; }
+  else if (result === 'push') { P.gold += b; bj.msg = `Push — bet returned (${b}g).`; }
+  else if (result === 'bust') { bj.msg = 'Bust! You lose.'; }
+  else { bj.msg = 'Dealer wins.'; }
+  if (result === 'blackjack' || result === 'dealerbust' || result === 'win') P.fame += 0;
+  save();
+  renderBj();
+}
+
+// ---------------------------------------------------------------------------
 // Bar maids (uw2ol hash_maids): waitress in the bar with real tips
 // ---------------------------------------------------------------------------
 function talkToMaid(maidId) {
@@ -1070,21 +1187,7 @@ delete P.ship;
 delete P.hull;
 P.cargoCost = P.cargoCost ?? {};
 if (P.character > CHARACTER_NAMES.length - 1) P.character = 0;
-// migrate global cabins (pre-UW4) into per-ship assignments
-if (P.cabins) {
-  const MAP = { navigator: 'navigation', gunner: 'gunnery', accountant: 'accounting',
-                lookout: 'lookout', surgeon: 'sickbay', boatswain: 'kitchen' };
-  P.shipCabins = P.shipCabins ?? {};
-  for (const [slot, id] of Object.entries(P.cabins)) {
-    if (!id || !P.fleet.length) continue;
-    const type = MAP[slot] ?? slot;
-    const cabins = cabinsOf(0);
-    let j = cabins.indexOf(type);
-    if (j < 0) { j = cabins.length - 1; cabins[j] = type; }
-    P.shipCabins[id] = cabinKey(0, j);
-  }
-  delete P.cabins;
-}
+
 
 const flag = () => P.fleet[0];                      // flagship
 const curShip = () => shipByName(flag().ship);      // flagship's type
@@ -1137,6 +1240,7 @@ function cabinsOf(i) {
   return f.cabins;
 }
 P.fleet.forEach((f, i) => cabinsOf(i));   // make sure every ship has its cabins
+
 P.shipCabins = P.shipCabins ?? {};                    // mateId -> "shipIdx:slotIdx"
 const cabinKey = (i, j) => `${i}:${j}`;
 const assignedMate = (i, j) =>
@@ -1172,6 +1276,26 @@ const lookoutRange = () => bestInCabins('lookout', 'intuition') * 0.5;
 const surgeonFactor = () => 1 - bestInCabins('sickbay', 'knowledge') * 0.05;
 const boatswainFactor = () => 1 - bestInCabins('kitchen', 'seamanship') * 0.05;
 const chapelFactor = () => 1 - bestInCabins('chapel', 'luck') * 0.03;
+
+// migrate global cabins (pre-UW4) into per-ship assignments
+if (P.cabins) {
+  const MAP = { navigator: 'navigation', gunner: 'gunnery', accountant: 'accounting',
+                lookout: 'lookout', surgeon: 'sickbay', boatswain: 'kitchen' };
+  P.shipCabins = P.shipCabins ?? {};
+  const used = new Set();
+  for (const [slot, id] of Object.entries(P.cabins)) {
+    if (!id || !P.fleet.length) continue;
+    const type = MAP[slot] ?? slot;
+    const cabins = cabinsOf(0);
+    let j = cabins.findIndex((t, k) => t === type && !used.has(k));
+    if (j < 0) j = cabins.findIndex((_, k) => !used.has(k));   // any free slot, retype it
+    if (j < 0) continue;                                       // flagship full — leave unassigned
+    cabins[j] = type;
+    used.add(j);
+    P.shipCabins[id] = cabinKey(0, j);
+  }
+  delete P.cabins;
+}
 const sailBonus = () => 1 + [0, 0.05, 0.1, 0.15][P.equipment.sails];
 const CANNON_MULT = [1, 1.3, 1.6, 2];
 const gunBonus = () => (1 + bestInCabins('gunnery', 'gunnery') * 0.1) * CANNON_MULT[P.equipment.cannons];
@@ -1369,6 +1493,7 @@ function buildingMenu(b) {
       if (maidId && maidsData[maidId]) {
         menu.push({ label: `Talk to the waitress`, action() { return talkToMaid(maidId); } });
       }
+      menu.push({ label: 'Play blackjack (21点)', action() { openBlackjack(); } });
       menu.push({ label: 'Manage mates & cabins', action() { openPanel('mates'); } });
       return menu;
     }
@@ -1535,6 +1660,7 @@ function openBuilding(b) {
 function hideBuildingPanel() {
   buildingPanel.style.display = 'none';
   pendingHire = null;
+  closeBlackjack();
   closeBuildingSubPanels();
   if (inBuilding && ['bar', 'church', 'palace'].includes(inBuilding.name)) {
     playMusic(portMusicFor(portId));
@@ -2586,6 +2712,7 @@ function onAshoreKey() {
 
 function onEscapeKey() {
   if (discoveryPanel.style.display === 'block') { discoveryPanel.style.display = 'none'; return; }
+  if (bj) { closeBlackjack(); return; }
   if (townOpen) { closeTown(); return; }
   if (closeTopPanel()) return;
   if (scene === 'port') {
@@ -2863,6 +2990,7 @@ window.UW = {
   setNoAutoSpawn: v => { noAutoSpawn = v; },
   landOn, reboard, startLandBattle, landBattleTurn,
   openTown, startRuin, ruinNext,
+  openBlackjack, bjDeal, bjHit, bjStand, getBj: () => bj && { state: bj.state, player: bjTotal(bj.player), msg: bj.msg },
   getTown: () => nearestTown(), getRuin: () => nearestRuin(),
   getRuinRun: () => ruin,
   getScene2: () => scene,
@@ -2936,7 +3064,7 @@ function tick() {
 
   // --- movement input ---
   let dx = 0, dz = 0;
-  const panelOpen = discoveryPanel.style.display === 'block' || inBuilding || anyPanelOpen() || !!landBattle || townOpen || !!ruin;
+  const panelOpen = discoveryPanel.style.display === 'block' || inBuilding || anyPanelOpen() || !!landBattle || townOpen || !!ruin || !!bj;
   if (started && !panelOpen) {
     if (keys['w'] || keys['arrowup']) dz -= 1;
     if (keys['s'] || keys['arrowdown']) dz += 1;

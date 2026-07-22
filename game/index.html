@@ -115,6 +115,16 @@
             border: 1px solid #2a3444; border-radius: 6px; padding: 6px 10px;
             margin: 8px 0; }
 
+  .bj-row { margin: 12px 0; font-size: 20px; }
+  .bj-label { display: inline-block; width: 70px; font-size: 14px; color: #bba; }
+  .bj-card { display: inline-block; min-width: 34px; padding: 2px 5px; margin: 0 2px;
+             background: #f5f0e6; color: #222; border-radius: 4px; font-weight: bold;
+             text-align: center; }
+  .bj-card.red { color: #c0392b; }
+  .bj-card.back { background: #2a3a6a; color: #2a3a6a; }
+  .bj-total { font-size: 15px; color: #ffd94d; margin-left: 8px; }
+  #bj-msg { min-height: 22px; color: #ffd94d; }
+
   #start-overlay { position: fixed; inset: 0; z-index: 10;
                    background: radial-gradient(ellipse at center, #0d2b4d 0%, #020a14 100%);
                    display: flex; flex-direction: column; align-items: center;
@@ -222,8 +232,18 @@
   </div>
 </div>
 
-<div class="panel" id="land-battle">
-  <h2 id="lb-enemy-name"></h2>
+<div class="panel" id="blackjack-panel">
+  <h2>Blackjack · 21点</h2>
+  <div id="bj-table">
+    <div class="bj-row"><span class="bj-label">Dealer</span> <span id="bj-dealer"></span> <span id="bj-dealer-total" class="bj-total"></span></div>
+    <div class="bj-row"><span class="bj-label">You</span> <span id="bj-player"></span> <span id="bj-player-total" class="bj-total"></span></div>
+  </div>
+  <p id="bj-msg"></p>
+  <div id="bj-actions"></div>
+  <div class="close-hint"><span class="key">Esc</span> leave table</div>
+</div>
+
+<div class="panel" id="land-battle">  <h2 id="lb-enemy-name"></h2>
   <canvas id="lb-enemy-img" width="147" height="147"
           style="image-rendering:pixelated;border:1px solid #8a6d3b;border-radius:4px;background:#000"></canvas>
   <div class="bar enemy" style="width:220px;margin:6px auto"><i id="lb-enemy-hp"></i></div>
@@ -290,6 +310,6 @@
 <script type="importmap">
   { "imports": { "three": "./lib/three.module.js" } }
 </script>
-<script type="module" src="./main.js?v=20260724"></script>
+<script type="module" src="./main.js?v=20260725"></script>
 </body>
 </html>
