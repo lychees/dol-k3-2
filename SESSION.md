@@ -358,6 +358,14 @@ the uw2ol project, which took them from the original Uncharted Waters 2
   Uses Zeiton's China-town map (PORT_MAP_OVERRIDE) and tileset 4, Far
   East region (East Asia Sea music on set sail, China Town in port),
   10 buildings. Port count is now 131.
+### 25. 港口发展度 + 投资占有率
+- Every port has a development value (capitals 500, normal 200, supply
+  100, Tamsui 150) tracked in `P.portDev[pid] = {dev, mine}` (persisted).
+- Palace / governor: status button shows development + your share, and
+  Invest 100/1000/10000g raises both dev and your contribution
+  (+1 per 100g). Share = mine / dev.
+- Share effects in that port's market: buy prices up to -10%, sell
+  prices up to +10% (including specialties).
 ## Key file formats (cheat sheet)
 
 | Data | Format |

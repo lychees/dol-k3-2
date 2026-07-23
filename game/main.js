@@ -328,6 +328,7 @@ async function enterPort(pid) {
   portScene.add(portWorld.mesh);
 
   portId = pid;
+  portDevOf(pid);   // initialize development stats on arrival
   portWalkMax = mapIdx >= 94 ? PORT_WALK_MAX_ASIA : PORT_WALK_MAX;
   portBuildings = Object.entries(meta.buildings)
     .map(([id, [x, y]]) => ({ id: +id, name: buildingNames[id], x, y }));
@@ -1363,6 +1364,7 @@ let P = {
   mateHp: {},                       // mate id -> current hp (land battles)
   telescope: false, discoveryQuest: null, deliveryQuest: null,
   palaceMilestone: 0, days: 0, discoveries: [], portsFound: [],
+  portDev: {},                        // portId -> {dev, mine}
   devSpeed: null,                 // developer-mode ship speed override
 };
 try {
@@ -1472,6 +1474,23 @@ const lookoutRange = () => bestInCabins('lookout', 'intuition') * 0.5;
 const surgeonFactor = () => 1 - bestInCabins('sickbay', 'knowledge') * 0.05;
 const boatswainFactor = () => 1 - bestInCabins('kitchen', 'seamanship') * 0.05;
 const chapelFactor = () => 1 - bestInCabins('chapel', 'luck') * 0.03;
+
+// --- port development & share (UW2-style) ----------------------------------
+const CAPITAL_PORTS = ['Lisbon', 'Seville', 'London', 'Marseille', 'Amsterdam', 'Venice', 'Istanbul'];
+function portDevOf(pid) {
+  if (!P.portDev[pid]) {
+    const p = ports.find(x => x.id === pid);
+    const dev = pid === 131 ? 150
+              : CAPITAL_PORTS.includes(p?.name) ? 500
+              : pid > 101 ? 100 : 200;
+    P.portDev[pid] = { dev, mine: 0 };
+  }
+  return P.portDev[pid];
+}
+const portShare = pid => {
+  const d = portDevOf(pid);
+  return d.dev > 0 ? d.mine / d.dev : 0;   // 0..1
+};
 
 // migrate global cabins (pre-UW4) into per-ship assignments
 if (P.cabins) {
@@ -1706,7 +1725,26 @@ function buildingMenu(b) {
     }
     case 'palace': {
       const next = P.palaceMilestone + 5;
+      const pd = portDevOf(portId);
+      const share = (portShare(portId) * 100).toFixed(1);
+      const investMenu = [100, 1000, 10000].map(amt => ({
+        label: `Invest ${amt}g in development`,
+        cost: amt, disabled: P.gold < amt,
+        action() {
+          P.gold -= amt;
+          const gain = Math.max(1, Math.round(amt / 100));
+          pd.dev += gain;
+          pd.mine += gain;
+          setBuildingText(
+            `Your investment of ${amt}g bears fruit.<br>` +
+            `${ports.find(x => x.id === portId)?.name} development: <b>${pd.dev}</b><br>` +
+            `Your share here: <b>${(portShare(portId) * 100).toFixed(1)}%</b> ` +
+            `(buy prices -${(portShare(portId) * 10).toFixed(0)}%, sell +${(portShare(portId) * 10).toFixed(0)}% in this port)`);
+        },
+      }));
       return [
+        { label: `Development ${pd.dev} · your share ${share}%`, disabled: true, action() {} },
+        ...investMenu,
         { label: `Request audience (${discoveriesFound.size}/${next} discoveries)`, disabled: discoveriesFound.size < next,
           action() {
             P.palaceMilestone = next;
@@ -1906,22 +1944,30 @@ function goodIcon(name) {
 const avgBuy = name => (P.cargo[name] ?? 0) > 0 ? (P.cargoCost[name] ?? 0) / P.cargo[name] : 0;
 
 function marketRows() {
-  const meta = portMeta[Math.min(portId, 101)];
+  const meta = portMeta[portId] ?? portMeta[Math.min(portId, 101)];
   const region = meta.region;
   const table = region ? goodsData.regions[region] : null;
+  const share = portShare(portId);   // your share: buy -10%, sell +10% at 100%
   const rows = [];
   if (table) {
     for (const [name, [buy, sell]] of Object.entries(table.prices)) {
-      rows.push({ name, buy: table.available[name]?.[0] ?? null, sell });
+      rows.push({
+        name,
+        buy: table.available[name]?.[0] != null
+          ? Math.max(1, Math.round(table.available[name][0] * (1 - share * 0.1))) : null,
+        sell: Math.round(sell * (1 + share * 0.1)),
+      });
     }
   }
   const spec = goodsData.specialties[portId];
   if (spec && !rows.find(r => r.name === spec.name)) {
     const sell = table?.prices[spec.name]?.[1] ?? Math.floor(spec.price * 1.5);
-    rows.push({ name: spec.name, buy: spec.price, sell, special: true });
+    rows.push({ name: spec.name, buy: Math.max(1, Math.round(spec.price * (1 - share * 0.1))),
+                sell: Math.round(sell * (1 + share * 0.1)), special: true });
   } else if (spec) {
     const r = rows.find(r => r.name === spec.name);
-    r.buy = spec.price; r.special = true;
+    r.buy = Math.max(1, Math.round(spec.price * (1 - share * 0.1)));
+    r.special = true;
   }
   return rows.sort((a, b) => a.name.localeCompare(b.name));
 }
