@@ -264,6 +264,24 @@ function updatePersonSprite() {
   personFrame(personMap, personDir, animFrame, CHARACTER_BLOCK[P.character]);
 }
 
+// short labels for the port quick bar
+const BLD_SHORT = {
+  market: 'Market', bar: 'Bar', dry_dock: 'Dock', harbor: 'Harbor', inn: 'Inn',
+  palace: 'Palace', job_house: 'Jobs', msc: 'MSC', bank: 'Bank',
+  item_shop: 'Shop', church: 'Church', fortune_house: 'Fortune',
+};
+const quickbar = document.getElementById('port-quickbar');
+function renderQuickbar() {
+  quickbar.innerHTML = '';
+  for (const b of portBuildings) {
+    const btn = document.createElement('button');
+    btn.textContent = BLD_SHORT[b.name] ?? b.name;
+    btn.title = b.name.replace(/_/g, ' ');
+    btn.onclick = () => { if (!inBuilding && !PANELS.dialog.open) openBuilding(b); };
+    quickbar.appendChild(btn);
+  }
+}
+
 // port state
 let scene = 'sea';              // 'sea' | 'port'
 let portId = null;              // 1-based port id (ports.json)
@@ -282,9 +300,12 @@ const walkableAt = (x, z) => {
   return portTileAt(c, r) <= portWalkMax;
 };
 
+// ports without their own PORTMAP reuse another port's map
+const PORT_MAP_OVERRIDE = { 131: 94 };   // Tamsui walks Zeiton's streets
+
 async function enterPort(pid) {
-  const meta = portMeta[Math.min(pid, 101)];
-  const mapIdx = Math.min(pid - 1, 100);
+  const meta = portMeta[pid] ?? portMeta[Math.min(pid, 101)];
+  const mapIdx = PORT_MAP_OVERRIDE[pid] ?? Math.min(pid - 1, 100);
   const tsFile = String(meta.tileset * 2).padStart(3, '0');
 
   // load this port's tileset (4 phases) on first visit
@@ -310,6 +331,7 @@ async function enterPort(pid) {
   portWalkMax = mapIdx >= 94 ? PORT_WALK_MAX_ASIA : PORT_WALK_MAX;
   portBuildings = Object.entries(meta.buildings)
     .map(([id, [x, y]]) => ({ id: +id, name: buildingNames[id], x, y }));
+  renderQuickbar();
 
   // spawn just south of the harbor (building id 4), else center
   const harbor = portBuildings.find(b => b.id === 4);
@@ -339,6 +361,7 @@ async function enterPort(pid) {
 function setSail() {
   scene = 'sea';
   inBuilding = null;
+  quickbar.style.display = 'none';
   closeDialog();
   hideBuildingPanel();
   camDist = 34;
@@ -3052,14 +3075,14 @@ function portMusicFor(pid) {
   if (PORTS_WITH_OWN_THEME.includes(name)) return `./assets/music/port/${name}.mp3`;
   const r = pid <= 101 ? meta.region : null;      // supply ports have no economy
   if (r && PORT_MUSIC_BY_REGION[r]) return `./assets/music/port/${PORT_MUSIC_BY_REGION[r]}`;
-  if ([95, 96, 98].includes(pid)) return './assets/music/port/China Town.mp3';
+  if ([95, 96, 98, 131].includes(pid)) return './assets/music/port/China Town.mp3';
   if ([99, 100].includes(pid)) return './assets/music/port/Japan Town.mp3';
   if (pid === 120) return './assets/music/port/Oceania Town.mp3';
   return './assets/music/port.ogg';
 }
 
 function seaMusicFor(pid) {
-  const r = pid <= 101 ? portMeta[pid]?.region : null;
+  const r = (portMeta[pid] ?? portMeta[Math.min(pid, 101)])?.region;
   if (r && SEA_MUSIC_BY_REGION[r]) return `./assets/music/sea/${SEA_MUSIC_BY_REGION[r]}`;
   return Math.random() < 0.5 ? './assets/music/sea.ogg' : './assets/music/sea_1.ogg';
 }
@@ -3325,6 +3348,8 @@ function tick() {
       const d = Math.hypot(b.x + 0.5 - personPos.x, b.y + 0.5 - personPos.z);
       if (d < bestD) { bestD = d; buildingNear = b; }
     }
+    quickbar.style.display =
+      (inBuilding || PANELS.dialog.open || panelOpen) ? 'none' : 'flex';
     if (!inBuilding && !PANELS.dialog.open) {
       if (buildingNear) {
         showHint(`<span class="key">E</span> enter ${buildingNear.name.replace(/_/g, ' ')}`);

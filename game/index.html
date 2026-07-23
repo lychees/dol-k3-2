@@ -30,6 +30,14 @@
              border: 2px solid #8a6d3b; border-radius: 4px;
              box-shadow: 0 0 12px rgba(0,0,0,.7); background:#020a14; }
 
+  #port-quickbar { position: fixed; bottom: 36px; left: 50%; transform: translateX(-50%);
+                   z-index: 6; display: none; gap: 5px; flex-wrap: wrap;
+                   justify-content: center; max-width: 90vw; }
+  #port-quickbar button { font-family: inherit; font-size: 14px; cursor: pointer;
+                   background: rgba(8,12,24,.85); color: #ffe9a8; border: 1px solid #8a6d3b;
+                   border-radius: 6px; padding: 5px 12px; }
+  #port-quickbar button:hover { background: #2a3a6a; border-color: #ffd94d; }
+
   #help { bottom: 10px; left: 12px; font-size: 13px; color: #cbb; opacity: .85; }
 
   .panel { position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%);
@@ -162,6 +170,7 @@
   <span class="key">`</span> dev
 </div>
 <canvas id="minimap" width="240" height="120"></canvas>
+<div id="port-quickbar"></div>
 
 <div class="panel" id="building-panel">
   <h2 id="building-name"></h2>
@@ -321,6 +330,6 @@
 <script type="importmap">
   { "imports": { "three": "./lib/three.module.js" } }
 </script>
-<script type="module" src="./main.js?v=20260726"></script>
+<script type="module" src="./main.js?v=20260727"></script>
 </body>
 </html>

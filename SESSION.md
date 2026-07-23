@@ -349,6 +349,15 @@ the uw2ol project, which took them from the original Uncharted Waters 2
 - **Card rank bug**: with ids suit*13+rank, bjValue/evalHand miscounted
   ranks (ace treated as 2, king as 14, ids >13 all counted 10 in
   blackjack). Shared `cardRank` helper fixes both games (ace-high).
+### 24. 港口快捷面板 + 淡水港
+- **Port quick bar**: a row of buttons at the bottom of the port scene
+  (Market/Bar/Dock/Harbor/Inn/Palace/Jobs/MSC/Bank/Shop/Church/Fortune)
+  opens each building instantly; hides while inside a building or in
+  dialogs.
+- **New port: Tamsui (淡水)**, id 131 at (1646,458) on the Taiwan coast.
+  Uses Zeiton's China-town map (PORT_MAP_OVERRIDE) and tileset 4, Far
+  East region (East Asia Sea music on set sail, China Town in port),
+  10 buildings. Port count is now 131.
 ## Key file formats (cheat sheet)
 
 | Data | Format |
