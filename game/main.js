@@ -1787,6 +1787,10 @@ function buildingMenu(b) {
         ];
         return [{ label: `Bring ${q.qty} ${q.good} (have ${have}) — reward ${q.reward}g`, disabled: true, action() {} }];
       }
+      if (q?.type === 'treasure') {
+        return [{ label: `Treasure map: dig at ${fmtLonLat(q.x, q.z)}${q.done ? ' (done)' : ''}`,
+                  disabled: true, action() {} }];
+      }
       if (q?.type === 'bounty') {
         if (q.done) return [
           { label: `Collect the bounty (+${q.reward}g)`, action() {
@@ -1823,6 +1827,22 @@ function buildingMenu(b) {
           P.jobQuest = { type: 'cargo', good, qty, reward };
           setBuildingText(`The guild needs <b>${qty} ${good}</b> — goods we can't get here. ` +
             `Bring them back to this job house. Reward: <b>${reward}g</b>.`);
+        } },
+        { label: 'Take a treasure hunt', action() {
+          // a remote spot on the map (60-240 tiles away)
+          let x = 0, z = 0;
+          for (let tries = 0; tries < 40; tries++) {
+            const ang = Math.random() * Math.PI * 2;
+            const dist = 60 + Math.random() * 180;
+            x = Math.round(here.x + Math.cos(ang) * dist);
+            z = Math.round(here.y + Math.sin(ang) * dist);
+            if (x > 5 && x < COLS - 5 && z > 5 && z < ROWS - 5) break;
+          }
+          const gold = Math.round((800 + Math.random() * 1200) * (1 + P.fame * 0.02));
+          P.jobQuest = { type: 'treasure', x, z, gold, guarded: Math.random() < 0.5, done: false };
+          setBuildingText(`An old map surfaces in the guild archives — <b>${fmtLonLat(x, z)}</b>. ` +
+            `The guild's cut is already taken. Dig there, captain.` +
+            (P.jobQuest.guarded ? ' <i>Rumor says someone is watching it…</i>' : ''));
         } },
         { label: 'Take a bounty hunt', action() {
           const ang = Math.random() * Math.PI * 2;
@@ -2468,6 +2488,10 @@ const MENU_RENDER = {
       const q = P.jobQuest;
       html += `<p><b>Cargo request (job house)</b>: bring <b>${q.qty} ${q.good}</b> ` +
               `(have ${P.cargo[q.good] ?? 0}). Reward: ${q.reward}g</p>`;
+    } else if (P.jobQuest?.type === 'treasure') {
+      const q = P.jobQuest;
+      html += `<p><b>Treasure hunt (job house)</b>: dig at <b>${fmtLonLat(q.x, q.z)}</b>` +
+              `${q.guarded ? ' (guarded!)' : ''}. Est. ${q.gold}g</p>`;
     } else if (P.jobQuest?.type === 'bounty') {
       const q = P.jobQuest;
       html += `<p><b>Bounty (job house)</b>: ${q.done ? 'COLLECT READY — ' : ''}sink <b>${q.name}</b> ` +
@@ -2637,6 +2661,23 @@ function fireCannon() {
   if (shipPos.distanceTo(battle.enemy.pos) > 10) return;
   battle.cd = 2;
   fireBall(shipPos, battle.enemy.pos, battleDmg(), true);
+}
+
+function digTreasure(q) {
+  q.done = true;
+  P.gold += q.gold;
+  P.fame += 3;
+  let extra = '';
+  if (Math.random() < 0.5 && cargoSpace() >= 5) {
+    const names = Object.keys(goodsData.regions['Iberia']?.prices ?? {});
+    const good = names[Math.floor(Math.random() * names.length)];
+    P.cargo[good] = (P.cargo[good] ?? 0) + 5;
+    extra = ` and 5 ${good}`;
+  }
+  save();
+  playSfx('./assets/sounds/discover.ogg');
+  showBanner(`Treasure found!<small>${q.gold}g${extra} · fame +3</small>`);
+  P.jobQuest = null;
 }
 
 function markBountyDone(p) {
@@ -3003,6 +3044,12 @@ function onUseKey() {
     if (npc) { npcDialog(npc); return; }
   }
   if (scene === 'sea') {
+    const q = P.jobQuest;
+    if (q?.type === 'treasure' && !q.done && !battle &&
+        Math.hypot(q.x - shipPos.x, q.z - shipPos.z) < 3) {
+      digTreasure(q);
+      return;
+    }
     const p = nearestPort();
     if (p) enterPort(p.id);
   } else if (inBuilding) {
@@ -3434,10 +3481,25 @@ function tick() {
     camera.position.set(shipPos.x, camDist * Math.cos(CAM_TILT), shipPos.z + camDist * Math.sin(CAM_TILT));
     camera.lookAt(shipPos.x, 0, shipPos.z);
 
+    // --- treasure quest: guardian spawns at the site ---
+    {
+      const q = P.jobQuest;
+      if (q?.type === 'treasure' && q.guarded && !q.done && !battle &&
+          !pirates.some(p => p.bountyName === 'treasure guard') &&
+          Math.hypot(q.x - shipPos.x, q.z - shipPos.z) < 15) {
+        spawnPirate(q.x + 1, q.z + 1, PIRATE_SHIPS[Math.floor(Math.random() * PIRATE_SHIPS.length)],
+                    'treasure guard');
+      }
+    }
+
     // --- hints: boarding / nearby port / village ---
     const p = battle ? null : nearestPort();
     const v = p || battle ? null : nearestVillage();
-    showHint(canBoard() ? `<span class="key">B</span> board them — melee fight!`
+    const tq = P.jobQuest;
+    const nearTreasure = !battle && tq?.type === 'treasure' && !tq.done &&
+                         Math.hypot(tq.x - shipPos.x, tq.z - shipPos.z) < 3;
+    showHint(nearTreasure ? `<span class="key">E</span> dig for treasure!`
+             : canBoard() ? `<span class="key">B</span> board them — melee fight!`
              : p ? `<span class="key">E</span> enter ${p.name}`
              : v ? `<span class="key">G</span> go ashore — something seems interesting here`
              : null);
