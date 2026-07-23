@@ -61,7 +61,7 @@ with sync_playwright() as p:
     page.click("#dev-tabs button:has-text('Teleport')")
     page.wait_for_timeout(300)
     n = page.evaluate("document.querySelectorAll('#dev-tp-port option').length")
-    check(f"130 ports in teleport list ({n})", n == 130)
+    check(f"131 ports in teleport list ({n})", n == 131)
     # find Istanbul (id 3) and teleport
     page.select_option("#dev-tp-port", "3")
     page.click("#dev-tp-go")
