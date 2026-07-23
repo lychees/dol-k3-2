@@ -83,7 +83,7 @@ with sync_playwright() as p:
     page.keyboard.press("Escape"); page.wait_for_timeout(300)  # set sail
 
     # lookout extends discovery sight: Stonehenge at (888,270), teleport 6.5 away
-    page.evaluate("window.UW.teleport(881, 270)")  # dist 7 > 4, but lookout int 50 -> +25... wait mate1 int=50
+    page.evaluate("window.UW.teleport(883, 270)")  # dist 7 > 4, but lookout int 50 -> +25... wait mate1 int=50
     page.wait_for_timeout(400)
     hint = page.inner_text("#hint")
     check("lookout extends discovery sight", "go ashore" in hint)

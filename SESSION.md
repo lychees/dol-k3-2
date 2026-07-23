@@ -375,6 +375,19 @@ the uw2ol project, which took them from the original Uncharted Waters 2
   (named pirate with a ship model posted at map coords; it lurks near the
   area, sink/capture it and collect at any job house). Legacy
   deliveryQuest saves migrate automatically.
+### 27. 航海士技能系统（UWO 风格）
+- **10 skills per mate** (Command/Navigation/Steering/Gunnery/Accounting/
+  Lookout/Surgery/Cooking/Fortune/Swordplay), initialized from base
+  stats (stat/25 + special skill), capped at Lv10.
+- **Skills grow with use**: daily training in the posted cabin,
+  broadsides -> Gunnery, trading -> Accounting, discoveries -> Lookout,
+  boarding -> Swordplay/Command, sinking ships -> Command. Level-ups
+  announced in a banner.
+- Cabin bonuses now scale with skill LEVEL (so they grow): Navigator
+  +1.2%/lv speed, Deck +0.5%/lv, Gunnery +4%/lv damage, Purser +2%/lv
+  sell, Lookout +1 tile/lv sight, Sick bay -2%/lv fatigue, Kitchen
+  -2%/lv food, Chapel -1.5%/lv fatigue, Captain +1%/lv melee.
+- Mate cards show the top 3 skills with levels.
 ## Key file formats (cheat sheet)
 
 | Data | Format |

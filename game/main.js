@@ -1455,25 +1455,74 @@ function assignMate(id, key) {
   }
   save();
 }
-// best value of `stat` among mates assigned to cabins of `type` (fleet-wide)
-function bestInCabins(type, stat) {
+// --- UWO-style mate skills: levels 1-10, grow with use ----------------------
+// cabin type -> skill key
+const CABIN_SKILL = {
+  captain: 'leadership', navigation: 'navigation', deck: 'steering',
+  gunnery: 'gunnery', accounting: 'accounting', lookout: 'lookout',
+  sickbay: 'surgery', kitchen: 'cooking', chapel: 'fortune',
+};
+const SKILL_LABEL = {
+  leadership: 'Command', navigation: 'Navigation', steering: 'Steering',
+  gunnery: 'Gunnery', accounting: 'Accounting', lookout: 'Lookout',
+  surgery: 'Surgery', cooking: 'Cooking', fortune: 'Fortune', swordplay: 'Swordplay',
+};
+P.mateSkills = P.mateSkills ?? {};   // mateId -> {skill: lv}
+P.mateSkillXp = P.mateSkillXp ?? {}; // mateId -> {skill: xp}
+
+// initial skills from base stats (stat/25 + special skill bonus)
+function initMateSkills(id) {
+  P.mateSkills = P.mateSkills ?? {};
+  P.mateSkillXp = P.mateSkillXp ?? {};
+  if (P.mateSkills[id]) return P.mateSkills[id];
+  const m = matesData[id];
+  const lv = (stat, special) => Math.max(1, Math.min(10, Math.floor(stat / 25) + (special ?? 0)));
+  P.mateSkills[id] = {
+    leadership: lv(m.leadership), steering: lv(m.seamanship), surgery: lv(m.knowledge),
+    lookout: lv(m.intuition), swordplay: lv(m.swordplay), fortune: lv(m.luck),
+    navigation: lv(m.navigation, m.navigation), gunnery: lv(m.gunnery, m.gunnery),
+    accounting: lv(m.accounting, m.accounting), cooking: lv(m.seamanship),
+  };
+  P.mateSkillXp[id] = {};
+  return P.mateSkills[id];
+}
+// lazily initialize for all hired mates
+const mateSkill = (id, skill) => (initMateSkills(id), P.mateSkills[id][skill] ?? 1);
+P.mates.forEach(initMateSkills);
+
+function gainSkillXp(id, skill, xp) {
+  if (!P.mates.includes(id)) return;
+  initMateSkills(id);
+  P.mateSkillXp[id][skill] = (P.mateSkillXp[id][skill] ?? 0) + xp;
+  const lv = P.mateSkills[id][skill];
+  if (lv < 10 && P.mateSkillXp[id][skill] >= lv * 10) {
+    P.mateSkillXp[id][skill] = 0;
+    P.mateSkills[id][skill] = lv + 1;
+    showBanner(`${matesData[id].name}'s ${SKILL_LABEL[skill]} reached Lv${lv + 1}!`);
+    save();
+  }
+}
+
+// best skill level among mates assigned to cabins of `type`
+function bestInCabins(type, skill) {
   let best = 0;
+  for (const id of P.mates) initMateSkills(id);   // keep every hired mate initialized
   for (const [idStr, key] of Object.entries(P.shipCabins)) {
     const [i, j] = key.split(':').map(Number);
     if (P.fleet[i] && cabinsOf(i)[j] === type) {
-      best = Math.max(best, matesData[idStr]?.[stat] ?? 0);
+      best = Math.max(best, mateSkill(+idStr, CABIN_SKILL[type] ?? skill));
     }
   }
   return best;
 }
 
-const navBonus = () => 1 + bestInCabins('navigation', 'navigation') * 0.05
-                        + bestInCabins('deck', 'seamanship') * 0.02;
-const accBonus = () => 1 + bestInCabins('accounting', 'accounting') * 0.05;
-const lookoutRange = () => bestInCabins('lookout', 'intuition') * 0.5;
-const surgeonFactor = () => 1 - bestInCabins('sickbay', 'knowledge') * 0.05;
-const boatswainFactor = () => 1 - bestInCabins('kitchen', 'seamanship') * 0.05;
-const chapelFactor = () => 1 - bestInCabins('chapel', 'luck') * 0.03;
+const navBonus = () => 1 + bestInCabins('navigation', 'navigation') * 0.012
+                        + bestInCabins('deck', 'steering') * 0.005;
+const accBonus = () => 1 + bestInCabins('accounting', 'accounting') * 0.02;
+const lookoutRange = () => bestInCabins('lookout', 'lookout') * 1;
+const surgeonFactor = () => 1 - bestInCabins('sickbay', 'surgery') * 0.02;
+const boatswainFactor = () => 1 - bestInCabins('kitchen', 'cooking') * 0.02;
+const chapelFactor = () => 1 - bestInCabins('chapel', 'fortune') * 0.015;
 
 // --- port development & share (UW2-style) ----------------------------------
 const CAPITAL_PORTS = ['Lisbon', 'Seville', 'London', 'Marseille', 'Amsterdam', 'Venice', 'Istanbul'];
@@ -1513,7 +1562,7 @@ if (P.cabins) {
 }
 const sailBonus = () => 1 + [0, 0.05, 0.1, 0.15][P.equipment.sails];
 const CANNON_MULT = [1, 1.3, 1.6, 2];
-const gunBonus = () => (1 + bestInCabins('gunnery', 'gunnery') * 0.1) * CANNON_MULT[P.equipment.cannons];
+const gunBonus = () => (1 + bestInCabins('gunnery', 'gunnery') * 0.04) * CANNON_MULT[P.equipment.cannons];
 const crewOk = () => P.crew >= fleetMinCrew();
 const battleDmg = () => fleetGuns() / 4 * gunBonus() * (crewOk() ? 1 : 0.5);
 
@@ -1560,6 +1609,12 @@ function terrainAt(z) {
 function onNewDay() {
   P.days++;
   P.bank = Math.floor(P.bank * 1.02);          // 2% daily interest
+  // mates train their posted skills daily (UWO-style growth)
+  for (const [idStr, key] of Object.entries(P.shipCabins)) {
+    const [i, j] = key.split(':').map(Number);
+    const type = P.fleet[i] && cabinsOf(i)[j];
+    if (type) gainSkillXp(+idStr, CABIN_SKILL[type], 1);
+  }
   if (scene === 'land') {
     // expeditions eat and tire like in UW3
     const terrain = terrainAt(landPos.z);
@@ -2085,6 +2140,10 @@ function renderMarket(msg = '') {
     save(); renderMarket(`Bought ${n} ${r.name} (-${r.buy * n}g)`);
   };
   const sellN = (r, n) => {
+    for (const [idStr, key] of Object.entries(P.shipCabins)) {
+      const [i, j] = key.split(':').map(Number);
+      if (P.fleet[i] && cabinsOf(i)[j] === 'accounting') gainSkillXp(+idStr, 'accounting', 1);
+    }
     const hold = P.cargo[r.name];
     n = Math.min(n, hold);
     const revenue = Math.ceil(r.sell * accBonus()) * n;
@@ -2305,11 +2364,15 @@ function renderMates() {
     const m = matesData[id];
     const card = document.createElement('div');
     card.className = 'mate-card';
+    const sk = initMateSkills(id);
+    const skStr = Object.entries(sk)
+      .sort((a, b) => b[1] - a[1]).slice(0, 3)
+      .map(([s, l]) => `${SKILL_LABEL[s]} Lv${l}`).join(' · ');
     card.innerHTML = `<img src="${figureUrl(...m.image)}" alt="">` +
       `<div class="mate-stats"><b>${m.name}</b> · ${m.nation} · lv ${m.lv}<br>` +
+      `<span style="color:#7fd4ff">${skStr}</span><br>` +
       `lead ${m.leadership} seam ${m.seamanship} know ${m.knowledge} int ${m.intuition} ` +
-      `cour ${m.courage} sword ${m.swordplay} luck ${m.luck}<br>` +
-      `nav ${m.navigation} gun ${m.gunnery} acc ${m.accounting}</div>`;
+      `cour ${m.courage} sword ${m.swordplay} luck ${m.luck}</div>`;
     const sel = document.createElement('select');
     sel.innerHTML = cabinOptions(id);
     sel.value = mateCabin(id) ?? '';
@@ -2597,8 +2660,8 @@ function fireBall(fromPos, targetPos, dmg, fromPlayer) {
 // best swordplay among assigned cabin mates drives melee power
 const meleeFactor = () => {
   let sw = 0;
-  for (const id of Object.keys(P.shipCabins)) sw = Math.max(sw, matesData[id]?.swordplay ?? 0);
-  return 1 + sw / 100 + bestInCabins('captain', 'leadership') * 0.01;
+  for (const id of Object.keys(P.shipCabins)) sw = Math.max(sw, mateSkill(+id, 'swordplay'));
+  return 1 + sw * 0.04 + bestInCabins('captain', 'leadership') * 0.01;
 };
 
 function canBoard() {
@@ -2637,6 +2700,10 @@ function boardingMelee(byPlayer) {
     if (e.crew <= 0) break;
     P.crew = Math.max(0, P.crew - Math.max(1, Math.round(e.crew * 0.2 * (0.8 + Math.random() * 0.4))));
   }
+  for (const id of Object.keys(P.shipCabins)) {
+    gainSkillXp(+id, 'swordplay', 5);
+    gainSkillXp(+id, 'leadership', 2);
+  }
   save();
   if (e.crew <= 0) {
     showBanner(`Boarding victory!<small>their crew is finished (${eStart} → 0); you lost ${pStart - P.crew} sailors</small>`);
@@ -2658,6 +2725,10 @@ function tryBoard() {
 
 function fireCannon() {
   if (!battle || battle.cd > 0 || !started || scene !== 'sea') return;
+  for (const [idStr, key] of Object.entries(P.shipCabins)) {
+    const [i, j] = key.split(':').map(Number);
+    if (P.fleet[i] && cabinsOf(i)[j] === 'gunnery') gainSkillXp(+idStr, 'gunnery', 2);
+  }
   if (shipPos.distanceTo(battle.enemy.pos) > 10) return;
   battle.cd = 2;
   fireBall(shipPos, battle.enemy.pos, battleDmg(), true);
@@ -2690,6 +2761,10 @@ function markBountyDone(p) {
 
 function sinkEnemy() {
   const p = battle.enemy;
+  for (const [idStr, key] of Object.entries(P.shipCabins)) {
+    const [i, j] = key.split(':').map(Number);
+    if (P.fleet[i] && cabinsOf(i)[j] === 'captain') gainSkillXp(+idStr, 'leadership', 5);
+  }
   markBountyDone(p);
   removePirate(p);
   const loot = Math.floor((150 + Math.random() * 400 + p.ship.price / 100) * (P.equipment.figurehead ? 1.25 : 1));
@@ -2880,6 +2955,10 @@ function nearestVillage() {
 
 function goAshore(v) {
   discoveriesFound.add(v.id);
+  for (const [idStr, key] of Object.entries(P.shipCabins)) {
+    const [i, j] = key.split(':').map(Number);
+    if (P.fleet[i] && cabinsOf(i)[j] === 'lookout') gainSkillXp(+idStr, 'lookout', 10);
+  }
   P.fame += 1;
   save();
   playSfx('./assets/sounds/discover.ogg');
