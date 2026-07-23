@@ -366,6 +366,15 @@ the uw2ol project, which took them from the original Uncharted Waters 2
   (+1 per 100g). Share = mine / dev.
 - Share effects in that port's market: buy prices up to -10%, sell
   prices up to +10% (including specialties).
+### 26. 传送双击 + 任务行会扩充
+- **Teleport double-click**: double-clicking a port name in the filtered
+  teleport list jumps there instantly.
+- **Job house quest types** (one active quest at a time, `P.jobQuest`):
+  delivery letters (existing), **cargo requests** (bring N units of a
+  good this region can't produce, reward = 1.5x value), **bounty hunts**
+  (named pirate with a ship model posted at map coords; it lurks near the
+  area, sink/capture it and collect at any job house). Legacy
+  deliveryQuest saves migrate automatically.
 ## Key file formats (cheat sheet)
 
 | Data | Format |

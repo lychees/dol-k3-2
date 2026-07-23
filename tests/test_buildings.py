@@ -126,8 +126,8 @@ with sync_playwright() as p:
     # --- job_house: delivery quest full cycle ---
     open_bld("job_house")
     click_btn("Take a delivery job")
-    q = page.evaluate("window.UW.P.deliveryQuest")
-    check("delivery quest accepted", q is not None and q.get("port") is not None)
+    q = page.evaluate("window.UW.P.jobQuest")
+    check("delivery quest accepted", q is not None and q.get("type") == "delivery" and q.get("port") is not None)
     page.keyboard.press("Escape"); page.wait_for_timeout(200)
     page.keyboard.press("Escape"); page.wait_for_timeout(300)  # set sail
     g0 = page.evaluate("window.UW.P.gold")
@@ -136,7 +136,7 @@ with sync_playwright() as p:
     open_bld("job_house")
     click_btn("Deliver the letter")
     check("delivery reward", page.evaluate("window.UW.P.gold") == g0 + q["reward"]
-          and page.evaluate("window.UW.P.deliveryQuest") is None)
+          and page.evaluate("window.UW.P.jobQuest") is None)
     page.keyboard.press("Escape"); page.wait_for_timeout(200)
     page.keyboard.press("Escape"); page.wait_for_timeout(300)
 

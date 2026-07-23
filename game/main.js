@@ -1760,32 +1760,83 @@ function buildingMenu(b) {
       ];
     }
     case 'job_house': {
-      if (P.deliveryQuest) {
-        const q = P.deliveryQuest;
+      // migrate legacy delivery quest
+      if (P.deliveryQuest) { P.jobQuest = { type: 'delivery', ...P.deliveryQuest }; delete P.deliveryQuest; }
+      const q = P.jobQuest;
+      if (q?.type === 'delivery') {
         const target = ports.find(p => p.id === q.port);
         if (q.port === portId) return [
           { label: `Deliver the letter (+${q.reward}g)`, action() {
-            P.gold += q.reward; P.fame += 3; P.deliveryQuest = null;
+            P.gold += q.reward; P.fame += 3; P.jobQuest = null;
             setBuildingText(`Letter delivered! Payment: ${q.reward}g. The guild thanks you.`);
           } },
         ];
         return [{ label: `Deliver letter to ${target.name} (${fmtLonLat(target.x, target.y)})`, disabled: true,
                   action() {} }];
       }
+      if (q?.type === 'cargo') {
+        const have = P.cargo[q.good] ?? 0;
+        if (have >= q.qty) return [
+          { label: `Hand over ${q.qty} ${q.good} (+${q.reward}g)`, action() {
+            P.cargo[q.good] -= q.qty;
+            P.cargoCost[q.good] = (P.cargoCost[q.good] ?? 0) * P.cargo[q.good] / have;
+            if (!P.cargo[q.good]) { delete P.cargo[q.good]; delete P.cargoCost[q.good]; }
+            P.gold += q.reward; P.fame += 3; P.jobQuest = null;
+            setBuildingText(`The guild inspects the ${q.good} and pays ${q.reward}g on the spot.`);
+          } },
+        ];
+        return [{ label: `Bring ${q.qty} ${q.good} (have ${have}) — reward ${q.reward}g`, disabled: true, action() {} }];
+      }
+      if (q?.type === 'bounty') {
+        if (q.done) return [
+          { label: `Collect the bounty (+${q.reward}g)`, action() {
+            P.gold += q.reward; P.fame += 5; P.jobQuest = null;
+            setBuildingText(`"${q.name} is finished? Fine work, captain." The guild counts out ${q.reward}g.`);
+          } },
+        ];
+        return [{ label: `Sink ${q.name} (${q.ship}) near ${fmtLonLat(q.x, q.z)} — bounty ${q.reward}g`,
+                  disabled: true, action() {} }];
+      }
+      const here = ports.find(p => p.id === portId);
       return [
         { label: 'Take a delivery job', action() {
-          // only ports that actually have a job house
           const others = ports.filter(p => {
             if (p.id === portId) return false;
             const m = portMeta[Math.min(p.id, 101)];
             return m.buildings && m.buildings[7];
           });
           const t = others[Math.floor(Math.random() * others.length)];
-          const here = ports.find(p => p.id === portId);
           const dist = Math.hypot(t.x - here.x, t.y - here.y);
           const reward = 200 + Math.min(800, Math.floor(dist / 2));
-          P.deliveryQuest = { port: t.id, reward };
+          P.jobQuest = { type: 'delivery', port: t.id, reward };
           setBuildingText(`Deliver this letter to the job house in <b>${t.name}</b> (${fmtLonLat(t.x, t.y)}). Reward: ${reward}g.`);
+        } },
+        { label: 'Take a cargo request', action() {
+          // a good this region does NOT sell (must be fetched from abroad)
+          const region = (portMeta[portId] ?? portMeta[Math.min(portId, 101)]).region;
+          const table = region && goodsData.regions[region];
+          const names = Object.keys(table?.prices ?? {}).filter(n => !table.available[n]);
+          const good = names.length ? names[Math.floor(Math.random() * names.length)] : 'Wine';
+          const qty = 5 + Math.floor(Math.random() * 11);
+          const base = table?.prices[good]?.[1] ?? 50;
+          const reward = Math.round(qty * base * 1.5);
+          P.jobQuest = { type: 'cargo', good, qty, reward };
+          setBuildingText(`The guild needs <b>${qty} ${good}</b> — goods we can't get here. ` +
+            `Bring them back to this job house. Reward: <b>${reward}g</b>.`);
+        } },
+        { label: 'Take a bounty hunt', action() {
+          const ang = Math.random() * Math.PI * 2;
+          const dist = 40 + Math.random() * 60;
+          const x = Math.round(here.x + Math.cos(ang) * dist);
+          const z = Math.round(here.y + Math.sin(ang) * dist);
+          const shipName = PIRATE_SHIPS[Math.floor(Math.random() * PIRATE_SHIPS.length)];
+          const names = ['Dread Captain Redhand', 'Black Bart', 'Red Zahra', 'Sea Wolf Ortiz',
+                         'Crimson Jack', 'Madame Storm'];
+          const name = names[Math.floor(Math.random() * names.length)];
+          const reward = Math.round((500 + Math.random() * 500) * (1 + P.fame * 0.02));
+          P.jobQuest = { type: 'bounty', name, ship: shipName, x, z, reward, done: false };
+          setBuildingText(`<b>${name}</b> and their ${shipName} have been raiding our convoys near ` +
+            `<b>${fmtLonLat(x, z)}</b>. Sink or capture them. Bounty: <b>${reward}g</b>.`);
         } },
       ];
     }
@@ -2409,10 +2460,18 @@ const MENU_RENDER = {
       html += `<p><b>Research quest (MSC)</b>: find <b>${v.name}</b> at ${fmtLonLat(v.x, v.y)}, ` +
               `then report to any MSC. Reward: 600g</p>`;
     }
-    if (P.deliveryQuest) {
-      const t = ports.find(p => p.id === P.deliveryQuest.port);
+    if (P.jobQuest?.type === 'delivery') {
+      const t = ports.find(p => p.id === P.jobQuest.port);
       html += `<p><b>Delivery (job house)</b>: letter to <b>${t.name}</b> ` +
-              `(${fmtLonLat(t.x, t.y)}). Reward: ${P.deliveryQuest.reward}g</p>`;
+              `(${fmtLonLat(t.x, t.y)}). Reward: ${P.jobQuest.reward}g</p>`;
+    } else if (P.jobQuest?.type === 'cargo') {
+      const q = P.jobQuest;
+      html += `<p><b>Cargo request (job house)</b>: bring <b>${q.qty} ${q.good}</b> ` +
+              `(have ${P.cargo[q.good] ?? 0}). Reward: ${q.reward}g</p>`;
+    } else if (P.jobQuest?.type === 'bounty') {
+      const q = P.jobQuest;
+      html += `<p><b>Bounty (job house)</b>: ${q.done ? 'COLLECT READY — ' : ''}sink <b>${q.name}</b> ` +
+              `(${q.ship}) near ${fmtLonLat(q.x, q.z)}. Reward: ${q.reward}g</p>`;
     }
     if (!html) html = '<p>No active quests — visit an MSC or a job house.</p>';
     html += `<hr style="border-color:#2a3444">` +
@@ -2467,7 +2526,7 @@ function makeShipMesh(row) {
   return mesh;
 }
 
-function spawnPirate(x, z, name) {
+function spawnPirate(x, z, name, bountyName = null) {
   const ship = shipByName(name ?? PIRATE_SHIPS[Math.floor(Math.random() * PIRATE_SHIPS.length)]);
   const mesh = makeShipMesh(ship.row);
   seaScene.add(mesh);
@@ -2475,6 +2534,7 @@ function spawnPirate(x, z, name) {
               hull: ship.hull,
               crew: ship.minCrew + Math.floor(Math.random() * ship.minCrew),
               cooldown: 2, boardCd: 8, fleeing: false, frame: 0, animT: 0 };
+  p.bountyName = bountyName;
   mesh.position.copy(p.pos);
   pirates.push(p);
   return p;
@@ -2523,6 +2583,7 @@ function canBoard() {
 
 function captureEnemy() {
   const e = battle.enemy;
+  markBountyDone(e);
   playSfx('./assets/sounds/explosion.ogg');
   if (P.fleet.length < 5) {
     P.fleet.push({ ship: e.ship.name, hull: Math.floor(e.ship.hull * 0.5) });
@@ -2578,8 +2639,17 @@ function fireCannon() {
   fireBall(shipPos, battle.enemy.pos, battleDmg(), true);
 }
 
+function markBountyDone(p) {
+  const q = P.jobQuest;
+  if (q?.type === 'bounty' && p.bountyName === q.name) {
+    q.done = true;
+    showBanner(`${q.name} eliminated!<small>return to any job house to collect the bounty</small>`);
+  }
+}
+
 function sinkEnemy() {
   const p = battle.enemy;
+  markBountyDone(p);
   removePirate(p);
   const loot = Math.floor((150 + Math.random() * 400 + p.ship.price / 100) * (P.equipment.figurehead ? 1.25 : 1));
   P.gold += loot;
@@ -3007,7 +3077,9 @@ function refreshDevPanel() {
     g.imageSmoothingEnabled = false;
     g.drawImage(discoveryImg, (ix - 1) * 49, (iy - 1) * 49, 49, 49, 0, 0, 49, 49);
   });
-  // teleport wiring: prefix filter + go
+  // teleport wiring: prefix filter + go (double-click a port to jump instantly)
+  const tpSel = document.getElementById('dev-tp-port');
+  if (tpSel) tpSel.ondblclick = () => document.getElementById('dev-tp-go').click();
   const tpFilter = document.getElementById('dev-tp-filter');
   if (tpFilter) {
     tpFilter.oninput = () => {
@@ -3371,7 +3443,15 @@ function tick() {
              : null);
 
     // --- pirates & battle ---
-    if (started && !panelOpen) updatePirates(dt);
+    if (started && !panelOpen) {
+      updatePirates(dt);
+      // bounty target lurks near its posted area
+      const q = P.jobQuest;
+      if (q?.type === 'bounty' && !q.done && !pirates.some(p => p.bountyName === q.name) &&
+          Math.hypot(q.x - shipPos.x, q.z - shipPos.z) < 40) {
+        spawnPirate(q.x + 2, q.z + 2, q.ship, q.name);
+      }
+    }
     updateBattle(dt);
 
     // --- HUD ---
