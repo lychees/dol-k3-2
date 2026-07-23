@@ -3007,7 +3007,18 @@ function refreshDevPanel() {
     g.imageSmoothingEnabled = false;
     g.drawImage(discoveryImg, (ix - 1) * 49, (iy - 1) * 49, 49, 49, 0, 0, 49, 49);
   });
-  // teleport wiring
+  // teleport wiring: prefix filter + go
+  const tpFilter = document.getElementById('dev-tp-filter');
+  if (tpFilter) {
+    tpFilter.oninput = () => {
+      const q = tpFilter.value.trim().toLowerCase();
+      const sel = document.getElementById('dev-tp-port');
+      sel.innerHTML = ports
+        .filter(p => p.name.toLowerCase().startsWith(q))
+        .map(p => `<option value="${p.id}">${p.name} (${fmtLonLat(p.x, p.y)})</option>`)
+        .join('');
+    };
+  }
   const tp = document.getElementById('dev-tp-go');
   if (tp) tp.onclick = () => {
     const pid = +document.getElementById('dev-tp-port').value;
@@ -3062,10 +3073,12 @@ const DEV_RENDER = {
     return html;
   },
   teleport() {
-    const opts = ports.map(p => `<option value="${p.id}">${p.name} (${fmtLonLat(p.x, p.y)})</option>`).join('');
-    return `<p>Teleport your fleet to any port's coast.</p>` +
-      `<p><select id="dev-tp-port" style="width:100%;font-size:15px;background:#1a2a4a;color:#ffe9a8;` +
-      `border:1px solid #8a6d3b;border-radius:6px;padding:6px">${opts}</select></p>` +
+    const opt = p => `<option value="${p.id}">${p.name} (${fmtLonLat(p.x, p.y)})</option>`;
+    return `<p>Teleport your fleet to any port's coast — type to filter by name prefix.</p>` +
+      `<p><input id="dev-tp-filter" placeholder="e.g. lis…" style="width:100%;box-sizing:border-box;` +
+      `font-size:15px;background:#1a2a4a;color:#ffe9a8;border:1px solid #8a6d3b;border-radius:6px;padding:6px"></p>` +
+      `<p><select id="dev-tp-port" size="8" style="width:100%;font-size:15px;background:#1a2a4a;color:#ffe9a8;` +
+      `border:1px solid #8a6d3b;border-radius:6px;padding:6px">${ports.map(opt).join('')}</select></p>` +
       `<p><button id="dev-tp-go">Teleport</button></p>`;
   },
 };
