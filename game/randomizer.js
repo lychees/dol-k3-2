@@ -219,6 +219,63 @@ export function generateWorldMap(rnd, COLS, ROWS, seaId, landIds) {
     }
   }
 
+  // rivers: meander inland from the coast (the coast pass edges them for free)
+  const MOUNT = [53, 54, 55, 56, 61, 62];
+  const at2 = (x, z) => data[((z + ROWS) % ROWS) * COLS + ((x + COLS) % COLS)];
+  const setAt = (x, z, v) => { data[((z + ROWS) % ROWS) * COLS + ((x + COLS) % COLS)] = v; };
+  const nRivers = 8 + Math.floor(rnd() * 8);
+  if (typeof window !== 'undefined') window.__riverLog = { planned: nRivers, started: 0, carved: 0 };
+  for (let r = 0; r < nRivers; r++) {
+    // start on a water tile next to land, walk inland
+    let x = -1, z = -1, dir = null;
+    for (let t = 0; t < 300 && dir === null; t++) {
+      const tx = Math.floor(rnd() * COLS), tz = Math.floor(rnd() * ROWS);
+      if (at2(tx, tz) !== seaId) continue;
+      // walk INLAND: toward the land neighbor, not away from it
+      for (const [dx, dz, d] of [[1, 0, 'e'], [-1, 0, 'w'], [0, 1, 's'], [0, -1, 'n']]) {
+        if (at2(tx + dx, tz + dz) !== seaId) { x = tx; z = tz; dir = d; break; }
+      }
+    }
+    if (dir === null) continue;
+    if (typeof window !== 'undefined') window.__riverLog.started++;
+    const DIRS = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
+    const TURNS = {
+      n: ['e', 'w'], s: ['e', 'w'], e: ['n', 's'], w: ['n', 's'],
+    };
+    for (let len = 0; len < 20 + rnd() * 50; len++) {
+      const [dx, dz] = DIRS[dir];
+      x += dx; z += dz;
+      const t = at2(x, z);
+      if (t === seaId) break;                    // reached open water/lake
+      setAt(x, z, seaId);                        // carve the river channel
+      if (typeof window !== 'undefined') window.__riverLog.carved++;
+      if (rnd() < 0.35) dir = TURNS[dir][rnd() < 0.5 ? 0 : 1];   // meander
+    }
+  }
+
+  // mountains: random clusters on land (hills, peaks, volcanoes)
+  const nMount = 15 + Math.floor(rnd() * 10);
+  for (let m = 0; m < nMount; m++) {
+    let x = -1, z = -1;
+    for (let t = 0; t < 200; t++) {
+      const tx = Math.floor(rnd() * COLS), tz = Math.floor(rnd() * ROWS);
+      if (at2(tx, tz) !== seaId && at2(tx, tz) !== 82) { x = tx; z = tz; break; }
+    }
+    if (x < 0) continue;
+    const size = 8 + Math.floor(rnd() * 24);
+    for (let len = 0; len < size; len++) {
+      if (at2(x, z) !== seaId && at2(x, z) !== 82) {
+        setAt(x, z, MOUNT[Math.floor(rnd() * MOUNT.length)]);
+      }
+      // wander but stay on land when possible
+      for (let tries = 0; tries < 4; tries++) {
+        const nx = x + [-1, 0, 1][Math.floor(rnd() * 3)];
+        const nz = z + [-1, 0, 1][Math.floor(rnd() * 3)];
+        if (at2(nx, nz) !== seaId) { x = nx; z = nz; break; }
+      }
+    }
+  }
+
   // smooth coastlines (marching squares): each sea tile touching land gets
   // the shore tile whose land-edge signature matches its neighbors
   const SIG_MAP = {
