@@ -13,7 +13,7 @@ const DAY_LENGTH_SEC = 180;   // one full in-game day
 const PORT_SIZE = 96;         // port maps are 96x96 tiles
 const PORT_WALK_MAX = 39;     // walkable port tile ids: 1..39
 const PORT_WALK_MAX_ASIA = 46;
-const WALK_SPEED = 6;         // tiles per second in port
+const WALK_SPEED = 6;         // tiles per second in port (x2 with Shift)
 
 // ---------------------------------------------------------------------------
 // Renderer / camera (created first: textures need the max anisotropy)
@@ -3708,7 +3708,7 @@ function tick() {
   } else if (scene === 'port') {
     // --- walk in port ---
     if (moving) {
-      const step = WALK_SPEED * dt;
+      const step = WALK_SPEED * (keys['shift'] ? 2 : 1) * dt;
       const nx = personPos.x + dx * step, nz = personPos.z + dz * step;
       if (walkableAt(nx, nz)) { personPos.x = nx; personPos.z = nz; }
       else if (walkableAt(nx, personPos.z)) personPos.x = nx;
@@ -3757,7 +3757,7 @@ function tick() {
   else {
     // --- walk on land (Dragon-Quest expeditions) ---
     if (moving && !landBattle) {
-      const step = WALK_SPEED * dt;
+      const step = WALK_SPEED * (keys['shift'] ? 2 : 1) * dt;
       const nx = landPos.x + dx * step, nz = landPos.z + dz * step;
       if (landAt(nx, nz)) { landPos.x = nx; landPos.z = nz; }
       else if (landAt(nx, landPos.z)) landPos.x = nx;
