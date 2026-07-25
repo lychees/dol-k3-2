@@ -1930,8 +1930,8 @@ function settleConsumption() {
       showBanner('Out of water and rations!<small>the crew is starving — fatigue soars; find a port</small>');
     }
     if (P.fatigue >= 100) {
-      // exhaustion kills fast: 15% of the crew per settlement (twice a day = ~30%/day)
-      const dead = Math.max(1, Math.ceil(P.crew * 0.15));
+      // exhaustion kills: 10 + random(5%, 25%) of the crew per settlement (twice a day)
+      const dead = Math.min(P.crew, 10 + Math.ceil(P.crew * (0.05 + Math.random() * 0.2)));
       P.crew = Math.max(0, P.crew - dead);
       if (P.crew <= 0) { gameOver('exhaustion'); return; }
       showBanner(`${dead} sailors died of exhaustion!<small>lower fatigue — rest at an inn, lime juice, chapel</small>`);
