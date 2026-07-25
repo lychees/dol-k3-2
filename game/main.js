@@ -3593,7 +3593,7 @@ document.getElementById('rando-start').addEventListener('click', e => {
 });
 
 document.getElementById('start-overlay').addEventListener('click', function (e) {
-  if (e.target.closest('#char-select') || started) return;   // picking a hero / already started
+  if (e.target.closest('#char-select') || e.target.closest('#rando-box') || started) return;   // picking a hero / using randomizer panel
   this.style.display = 'none';
   started = true;
   save();
