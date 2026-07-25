@@ -3458,6 +3458,13 @@ window.UW = {
                                ex: battle.enemy.pos.x, ez: battle.enemy.pos.z },
   getPirates: () => pirates.length,
   getNpcs: () => ({ wanderers: npcs.length, static: staticNpcs.length }),
+  debugNpcDir: dir => {
+    const n = npcs[0];
+    if (!n) return null;
+    n.mvx = 0; n.mvz = 0; n.moveT = 999; n.dir = dir; n.frame = 0;
+    setPackNpcFrame(n.mesh, n.charIdx, dir, 0);
+    return n.charIdx;
+  },
   nearestNpc, npcDialog,
   getNpcDebug: () => ({
     w: npcs.map(n => ({ x: n.pos.x, z: n.pos.z, col: NPC_FRAMES[n.kind][n.dir] + n.frame,
