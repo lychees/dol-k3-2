@@ -35,7 +35,7 @@ const mdMode = localStorage.getItem(MD_KEY) === '1';
 // ---------------------------------------------------------------------------
 // Boot: load all assets, then init
 // ---------------------------------------------------------------------------
-const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, shipData, matesData, maidsData, towns, ruins, shipTex, personTex, npcAtlasTex] =
+const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, shipData, matesData, maidsData, towns, ruins, shipTex, personTex, npcAtlasTex, heroesTex] =
   await Promise.all([
     fetch('./assets/world_map.bin').then(r => r.arrayBuffer()),
     fetch('./assets/portmaps.bin').then(r => r.arrayBuffer()),
@@ -52,6 +52,7 @@ const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, 
     loadTex('./assets/ship-tileset.png', false),
     loadTex('./assets/person-tileset.png', false),
     loadTex('./assets/npc_atlas.png', false),
+    loadTex('./assets/heroes.png', false),
   ]);
 let mapData = new Uint8Array(mapBuf);
 const portMaps = new Uint8Array(portMapBuf);   // 101 maps of 96*96
@@ -368,21 +369,26 @@ function makeDotTexture() {
 const portScene = new THREE.Scene();
 portScene.background = new THREE.Color(0x020a14);
 
-// person sprite: 32 cols x 1 row of 32px; cols: up 0-1, right 2-3, down 4-5, left 6-7
-const person = makeSprite(personTex, 1 / 32, 1);
+// person sprite: the 6 UW2 protagonists (DOS sheet, 8 cols x 6 rows of 68px)
+const HEROES_W = 544, HEROES_H = 612;
+const person = makeSprite(heroesTex, 68 / HEROES_W, 68 / HEROES_H, 2.4);
 const personMap = person.material.map;
 portScene.add(person);
 
 const personPos = new THREE.Vector3(48, 0.4, 48);
 let personDir = 'down';
 
-// person_tileset: cols 0-7 player, 8-15 woman npc, 16-23 man npc;
-// cols 24-31 are static npc pairs (agent/old man/dog/guard), NOT walkable characters
-const CHARACTER_NAMES = ['João Ferrero', 'Catalina Erantzo', 'Otto Baynes'];
-const CHARACTER_BLOCK = [0, 8, 16];
+// the 6 UW2 protagonists from the DOS sheet (rows 0-5);
+// cols per character: up 0-1, left 2-3, down 4-5, right 6-7
+const CHARACTER_NAMES = ['João Ferrero', 'Catalina Erantzo', 'Otto Baynes',
+                         'Ernst Von Bohr', 'Pietro Conti', 'Ali Vezas'];
+const heroFrame = (map, dir, frame, charRow) => {
+  const col = DIRECTION_COL[dir] + frame;
+  map.offset.set(col * 68 / HEROES_W, 1 - (charRow * 68 + 68) / HEROES_H);
+};
 
 function updatePersonSprite() {
-  personFrame(personMap, personDir, animFrame, CHARACTER_BLOCK[P.character]);
+  heroFrame(personMap, personDir, animFrame, P.character);
 }
 
 // short labels for the port quick bar
@@ -1074,7 +1080,7 @@ function updateNpcs(dt, phase) {
 // ---------------------------------------------------------------------------
 // Land exploration (L): walk ashore, Dragon-Quest style expeditions
 // ---------------------------------------------------------------------------
-const landPerson = makeSprite(personTex, 1 / 32, 1);
+const landPerson = makeSprite(heroesTex, 68 / HEROES_W, 68 / HEROES_H, 2.4);
 const landPersonMap = landPerson.material.map;
 landPerson.visible = false;
 seaScene.add(landPerson);
@@ -1083,7 +1089,7 @@ const landPos = new THREE.Vector3(0, 0.4, 0);
 let landDir = 'down';
 
 function updateLandPersonSprite() {
-  personFrame(landPersonMap, landDir, animFrame, CHARACTER_BLOCK[P.character]);
+  heroFrame(landPersonMap, landDir, animFrame, P.character);
 }
 
 const LAND_MONSTERS = [
@@ -3655,7 +3661,7 @@ window.UW = {
     c.title = name;
     const g = c.getContext('2d');
     g.imageSmoothingEnabled = false;
-    g.drawImage(personTex.image, (CHARACTER_BLOCK[ci] + 4) * 32, 0, 32, 32, 0, 0, 64, 64);
+    g.drawImage(heroesTex.image, 4 * 68, ci * 68, 68, 68, 0, 0, 64, 64);
     c.onclick = () => {
       P.character = ci;
       picker.querySelectorAll('.char-portrait').forEach(x => x.classList.remove('selected'));

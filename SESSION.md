@@ -430,6 +430,14 @@ the uw2ol project, which took them from the original Uncharted Waters 2
   polar ice naturally block the seam there).
 - Randomizer mode shows `seed: <n>` at the bottom-right (above the minimap).
 - All randomizer options are now checked by default.
+### 32. DOS 版 6 主角行走图
+- User-provided figure.png (544x612, UW2 DOS/VGA sprite sheet) integrated
+  as `heroes.png`: 6 protagonists (João Ferrero, Catalina Erantzo, Otto
+  Baynes, Ernst Von Bohr, Pietro Conti, Ali Vezas), 68px cells, frame
+  layout up 0-1 / left 2-3 / down 4-5 / right 6-7 — matching the game's
+  DIRECTION_COL mapping exactly.
+- Character picker now offers all 6; palette-key background (40,40,60)
+  chroma-keyed to transparent.
 ## Key file formats (cheat sheet)
 
 | Data | Format |
