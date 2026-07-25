@@ -197,6 +197,35 @@ export function generateWorldMap(rnd, COLS, ROWS, seaId, landIds) {
   for (let i = 0; i < data.length; i++) {
     if (data[i] === seaId && !reach[i]) { data[i] = landIds[0]; sealed++; }
   }
+
+  // smooth coastlines (marching squares): each sea tile touching land gets
+  // the shore tile whose land-edge signature matches its neighbors
+  const SIG_MAP = {
+    0: [1], 1: [11, 27], 2: [6, 14, 30], 3: [12, 20, 28], 4: [8, 16, 32],
+    6: [9, 17, 25], 8: [5, 13, 21, 29], 9: [10, 18, 26], 11: [2, 3],
+    12: [7, 15, 23, 31], 15: [4],
+  };
+  const SNOW_TILES = new Set([18, 19, 20, 22, 24, 25, 26]);
+  for (let z = 0; z < ROWS; z++) {
+    for (let x = 0; x < COLS; x++) {
+      const i = z * COLS + x;
+      if (data[i] !== seaId) continue;
+      const at = (dx, dz) => data[((z + dz + ROWS) % ROWS) * COLS + ((x + dx + COLS) % COLS)];
+      let sig = 0, polar = false;
+      if (at(0, -1) !== seaId) { sig |= 1; if (at(0, -1) === 82) polar = true; }
+      if (at(1, 0) !== seaId)  { sig |= 2; if (at(1, 0) === 82) polar = true; }
+      if (at(0, 1) !== seaId)  { sig |= 4; if (at(0, 1) === 82) polar = true; }
+      if (at(-1, 0) !== seaId) { sig |= 8; if (at(-1, 0) === 82) polar = true; }
+      if (!sig) continue;
+      const cands = SIG_MAP[sig] ?? [1];
+      if (polar) {
+        const snowy = cands.filter(t => SNOW_TILES.has(t));
+        if (snowy.length) { data[i] = snowy[Math.floor(rnd() * snowy.length)]; continue; }
+      }
+      data[i] = cands[Math.floor(rnd() * cands.length)];
+    }
+  }
+  return { data, sealedLakes: sealed };
   return { data, sealedLakes: sealed };
 }
 
