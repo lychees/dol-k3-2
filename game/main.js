@@ -304,14 +304,21 @@ const [startX, startZ] = sailableNear(lisbon.x, lisbon.y);
 const shipPos = new THREE.Vector3(startX, 0.4, startZ);
 
 // --- port markers: the original map icons (117 = city port, 121 = supply) ---
-// port icons are 2x2 tiles: city = 117-120, supply = 121-124
+// port/village icons are 2x2 tiles laid out consecutively in ONE tileset row:
+// [tl, tr, bl, br] — city 117-120, supply 121-124, village 125-128
 function iconTexture(tid) {
   const img = phaseTex.day.image;
   const c = document.createElement('canvas');
   c.width = c.height = 32;
   const g = c.getContext('2d');
-  const sx = (tid - 1) % 16 * 16, sy = ((tid - 1) / 16 | 0) * 16;
-  g.drawImage(img, sx, sy, 32, 32, 0, 0, 32, 32);
+  const tile = (t, dx, dy) => {
+    const sx = (t - 1) % 16 * 16, sy = ((t - 1) / 16 | 0) * 16;
+    g.drawImage(img, sx, sy, 16, 16, dx, dy, 16, 16);
+  };
+  tile(tid, 0, 0);
+  tile(tid + 1, 16, 0);
+  tile(tid + 2, 0, 16);
+  tile(tid + 3, 16, 16);
   // chroma-key the sea-blue background (sample the top-left pixel)
   const d = g.getImageData(0, 0, 32, 32);
   const bg = g.getImageData(0, 0, 1, 1).data;
@@ -329,6 +336,10 @@ function iconTexture(tid) {
 }
 const portIconTex = iconTexture(117);
 const supplyIconTex = iconTexture(121);
+const villageIconTex = iconTexture(125);
+const villagePoints = makePortPoints(
+  villages.map(v => ({ id: v.id, x: v.x, y: v.y })), villageIconTex);
+seaScene.add(villagePoints);
 
 function makePortPoints(list, tex) {
   const geo = new THREE.BufferGeometry();
@@ -345,7 +356,7 @@ const portPoints = makePortPoints(cityPorts, portIconTex);
 const supplyPoints = makePortPoints(supplyPorts, supplyIconTex);
 seaScene.add(portPoints);
 seaScene.add(supplyPoints);
-for (const base of [portPoints, supplyPoints]) {
+for (const base of [portPoints, supplyPoints, villagePoints]) {
   for (let ox = -1; ox <= 1; ox++) {
     for (let oz = -1; oz <= 1; oz++) {
       if (ox === 0 && oz === 0) continue;
