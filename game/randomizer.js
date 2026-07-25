@@ -198,6 +198,27 @@ export function generateWorldMap(rnd, COLS, ROWS, seaId, landIds) {
     if (data[i] === seaId && !reach[i]) { data[i] = landIds[0]; sealed++; }
   }
 
+  // de-speckle: majority filter so landmasses become solid and coastlines clean
+  // (raw noise is full of 1-tile specks that make every coast a sandstorm)
+  for (let pass = 0; pass < 2; pass++) {
+    const src = Uint8Array.from(data);
+    const at = (x, z) => src[((z + ROWS) % ROWS) * COLS + ((x + COLS) % COLS)];
+    for (let z = 0; z < ROWS; z++) {
+      for (let x = 0; x < COLS; x++) {
+        let water = 0, land = 0;
+        for (let dz = -1; dz <= 1; dz++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (at(x + dx, z + dz) === seaId) water++; else land++;
+          }
+        }
+        const i = z * COLS + x;
+        // flip only clear minorities, keep everything else as-is
+        if (water >= 7 && land > 0 && src[i] !== seaId) data[i] = seaId;
+        else if (land >= 7 && water > 0 && src[i] === seaId) data[i] = landIds[0];
+      }
+    }
+  }
+
   // smooth coastlines (marching squares): each sea tile touching land gets
   // the shore tile whose land-edge signature matches its neighbors
   const SIG_MAP = {
@@ -206,11 +227,14 @@ export function generateWorldMap(rnd, COLS, ROWS, seaId, landIds) {
     12: [7, 15, 23, 31], 15: [4],
   };
   const SNOW_TILES = new Set([18, 19, 20, 22, 24, 25, 26]);
+  // snapshot first: converting in place would cascade "land neighbor" across
+  // the whole ocean (shore tiles are not seaId and look like land)
+  const pre = Uint8Array.from(data);
   for (let z = 0; z < ROWS; z++) {
     for (let x = 0; x < COLS; x++) {
       const i = z * COLS + x;
-      if (data[i] !== seaId) continue;
-      const at = (dx, dz) => data[((z + dz + ROWS) % ROWS) * COLS + ((x + dx + COLS) % COLS)];
+      if (pre[i] !== seaId) continue;
+      const at = (dx, dz) => pre[((z + dz + ROWS) % ROWS) * COLS + ((x + dx + COLS) % COLS)];
       let sig = 0, polar = false;
       if (at(0, -1) !== seaId) { sig |= 1; if (at(0, -1) === 82) polar = true; }
       if (at(1, 0) !== seaId)  { sig |= 2; if (at(1, 0) === 82) polar = true; }
