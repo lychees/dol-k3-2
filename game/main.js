@@ -1437,6 +1437,25 @@ function openTown(t) {
     document.getElementById('town-text').textContent = 'Supplies loaded onto the ship via the local caravans.';
     save();
   }, P.gold < 50 || P.provisions >= 100);
+  // a ship can only be boarded here if it is actually here (UW3-style);
+  // otherwise buy a new one to set sail from this town
+  const shipDist = Math.hypot(t.x - shipPos.x, t.z - shipPos.z);
+  const coastal = [[1, 0], [-1, 0], [0, 1], [0, -1], [2, 0], [-2, 0], [0, 2], [0, -2]]
+    .some(([dx, dz]) => sailableAt(t.x + dx, t.z + dz));
+  if (coastal && shipDist > 6) {
+    mk('Buy a ship & set sail (1000g)', () => {
+      if (P.gold < 1000) return;
+      P.gold -= 1000;
+      const [x, z] = sailableNear(t.x, t.z);
+      shipPos.set(x, 0.4, z);
+      closeTown();
+      landPerson.visible = false;
+      scene = 'sea';
+      camDist = 34;
+      showBanner(`${t.name}<small>your new ship is ready — set sail!</small>`);
+      save();
+    }, P.gold < 1000);
+  }
   mk('Hear rumors', () => {
     const unknown = villages.filter(v => !discoveriesFound.has(v.id));
     if (unknown.length) {
@@ -1934,13 +1953,27 @@ function buildingMenu(b) {
   if (!b) return [];
   const ship = curShip();
   switch (b.name) {
-    case 'harbor': return [
-      { label: 'Buy provisions (fill to 100)', cost: 100 - P.provisions,
-        disabled: P.provisions >= 100,
-        action() { P.gold -= 100 - P.provisions; P.provisions = 100;
-                   setBuildingText('Provisions loaded. The crew is ready.'); } },
-      { label: 'Set sail', action() { setSail(); } },
-    ];
+    case 'harbor': {
+      const menu = [
+        { label: 'Buy provisions (fill to 100)', cost: 100 - P.provisions,
+          disabled: P.provisions >= 100,
+          action() { P.gold -= 100 - P.provisions; P.provisions = 100;
+                     setBuildingText('Provisions loaded. The crew is ready.'); } },
+      ];
+      const here = ports.find(p => p.id === portId);
+      const shipHere = here && Math.hypot(shipPos.x - here.x, shipPos.z - here.y) <= 6;
+      if (shipHere) {
+        menu.push({ label: 'Set sail', action() { setSail(); } });
+      } else {
+        menu.push({ label: 'Buy a new ship & set sail', cost: 1000, action() {
+          P.gold -= 1000;
+          const [x, z] = sailableNear(here.x, here.y);
+          shipPos.set(x, 0.4, z);
+          setSail();
+        } });
+      }
+      return menu;
+    }
     case 'market': return [
       { label: 'Trade goods', action() { openPanel('market'); } },
     ];
@@ -3385,9 +3418,18 @@ function onUseKey() {
   } else if (buildingNear) {
     openBuilding(buildingNear);
   } else if (scene === 'land') {
+    const np = (() => {
+      let best = null, bestD = 4;
+      for (const p of ports) {
+        const d = Math.hypot(p.x - landPos.x, p.y - landPos.z);
+        if (d < bestD) { best = p; bestD = d; }
+      }
+      return best;
+    })();
     const t = nearestTown();
     const ru = nearestRuin();
-    if (t) openTown(t);
+    if (np) enterPort(np.id);
+    else if (t) openTown(t);
     else if (ru && !ruinCooldown(ru.id)) startRuin(ru);
   }
 }
@@ -3995,8 +4037,17 @@ function tick() {
     camera.lookAt(landPos.x, 0, landPos.z);
 
     const nearShip = Math.hypot(landPos.x - shipPos.x, landPos.z - shipPos.z) <= 2.5;
+    const nearPortLand = (() => {
+      let best = null, bestD = 4;
+      for (const p of ports) {
+        const d = Math.hypot(p.x - landPos.x, p.y - landPos.z);
+        if (d < bestD) { best = p; bestD = d; }
+      }
+      return best;
+    })();
     const t = nearestTown(), ru = nearestRuin();
     showHint(landBattle || townOpen || ruin ? null
+             : nearPortLand ? `<span class="key">E</span> enter ${nearPortLand.name}`
              : t ? `<span class="key">E</span> enter ${t.name}`
              : ru ? (ruinCooldown(ru.id)
                      ? `${ru.name} — already explored (returns in ${Math.ceil((P.ruinCd[ru.id] + 7) - P.days)}d)`
