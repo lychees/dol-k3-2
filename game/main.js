@@ -840,7 +840,7 @@ function makeNpcMesh(frameIdx) {
 // Jephed's top-down pixel art characters (40 chars in npc_atlas.png, 8x5 sheets)
 // per character: 3 cols x 4 rows of 20x32 cells; rows: down/right/up/left
 const ATLAS_W = 512, ATLAS_H = 640;
-const PACK_DIR_ROW = { down: 0, right: 1, up: 2, left: 3 };
+const PACK_DIR_ROW = { down: 0, left: 1, up: 2, right: 3 };
 
 function makePackNpcMesh(charIdx) {
   const map = npcAtlasTex.clone();
