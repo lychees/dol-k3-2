@@ -28,6 +28,10 @@ const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 20
 let camDist = 34;                       // zoom level (wheel)
 const CAM_TILT = 0.35;                  // radians from vertical
 
+// --- Mega Drive palette mode flag (must exist before any texture loads) ---
+const MD_KEY = 'uw-md-mode';
+const mdMode = localStorage.getItem(MD_KEY) === '1';
+
 // ---------------------------------------------------------------------------
 // Boot: load all assets, then init
 // ---------------------------------------------------------------------------
@@ -58,6 +62,33 @@ await Promise.all(phaseNames.map(async n => {
   phaseTex[n] = await loadTex(`./assets/tiles_${n}.png`);
 }));
 
+// --- Mega Drive palette transform: quantize to 9-bit color + boost contrast --
+function mdTransform(img) {
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const g = c.getContext('2d');
+  g.drawImage(img, 0, 0);
+  const d = g.getImageData(0, 0, c.width, c.height);
+  const px = d.data;
+  for (let i = 0; i < px.length; i += 4) {
+    if (px[i + 3] < 10) continue;
+    // 9-bit color depth (Mega Drive: 32 steps per channel) + MD-style punch
+    for (let ch = 0; ch < 3; ch++) {
+      const v = px[i + ch] / 255;
+      const c = Math.max(0, Math.min(1, (v - 0.5) * 1.22 + 0.47));   // contrast
+      px[i + ch] = Math.round(c * 31) * 255 / 31;
+    }
+    // saturation boost (MD colors are punchier)
+    const r = px[i], gg = px[i + 1], b = px[i + 2];
+    const lum = (r + gg + b) / 3;
+    px[i]     = Math.max(0, Math.min(255, r + (r - lum) * 0.35));
+    px[i + 1] = Math.max(0, Math.min(255, gg + (gg - lum) * 0.35));
+    px[i + 2] = Math.max(0, Math.min(255, b + (b - lum) * 0.35));
+  }
+  g.putImageData(d, 0, 0);
+  return c;
+}
+
 // Tilesets: raw colors (no sRGB decode — output matches the original PNGs),
 // mipmaps + anisotropy so distant tiles blend instead of moiré-striping.
 // (texel-center sampling in the shader keeps magnified pixels crisp even
@@ -65,6 +96,7 @@ await Promise.all(phaseNames.map(async n => {
 // Sprites (filter=false): crisp nearest, no mipmaps.
 function loadTex(url, filter = true) {
   return new Promise((res, rej) => new THREE.TextureLoader().load(url, t => {
+    if (mdMode) t.image = mdTransform(t.image);
     if (filter) {
       t.magFilter = THREE.LinearFilter;
       t.minFilter = THREE.LinearMipmapLinearFilter;
@@ -3310,7 +3342,7 @@ function refreshDevPanel() {
   document.getElementById('dev-speed').value = P.devSpeed ?? curShip().speed;
   document.getElementById('dev-status').textContent =
     `flagship: ${curShip().name} · fleet: ${P.fleet.length}/5 · speed override: ${P.devSpeed ?? 'off'}` +
-    (P.randoSeed ? ` · seed: ${P.randoSeed}` : '');
+    (P.randoSeed ? ` · seed: ${P.randoSeed}` : '') + (mdMode ? ' · MD palette' : '');
   // tabs
   const tabs = document.getElementById('dev-tabs');
   tabs.innerHTML = '';
@@ -3640,6 +3672,17 @@ document.getElementById('ruin-leave').onclick = () => ruinFlee();
 document.getElementById('lb-attack').onclick = () => landBattleTurn('attack');
 document.getElementById('lb-balm').onclick = () => landBattleTurn('balm');
 document.getElementById('lb-run').onclick = () => landBattleTurn('run');
+
+{
+  const mdBox = document.getElementById('md-mode');
+  mdBox.checked = mdMode;
+  mdBox.onchange = () => {
+    localStorage.setItem(MD_KEY, mdBox.checked ? '1' : '0');
+    location.reload();
+  };
+  // clicking the label must not start the game
+  mdBox.parentElement.addEventListener('click', e => e.stopPropagation());
+}
 
 document.getElementById('rando-start').addEventListener('click', e => {
   e.stopPropagation();
