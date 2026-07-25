@@ -226,27 +226,37 @@ export function generateWorldMap(rnd, COLS, ROWS, seaId, landIds) {
     6: [9, 17, 25], 8: [5, 13, 21, 29], 9: [10, 18, 26], 11: [2, 3],
     12: [7, 15, 23, 31], 15: [4],
   };
-  const SNOW_TILES = new Set([18, 19, 20, 22, 24, 25, 26]);
+  // shore tiles are color-matched to the adjacent land (grass/sand/snow)
+  const SNOW_SHORE = new Set([18, 20, 22, 23, 24, 25]);
+  const shoreClass = t => t >= 26 ? 'sand' : SNOW_SHORE.has(t) ? 'snow' : 'grass';
+  const landClass = t => t === 82 ? 'snow' : t === 90 ? 'sand' : 'grass';
   // snapshot first: converting in place would cascade "land neighbor" across
   // the whole ocean (shore tiles are not seaId and look like land)
   const pre = Uint8Array.from(data);
+  const POLAR_BAND = 0.045;
   for (let z = 0; z < ROWS; z++) {
     for (let x = 0; x < COLS; x++) {
       const i = z * COLS + x;
       if (pre[i] !== seaId) continue;
       const at = (dx, dz) => pre[((z + dz + ROWS) % ROWS) * COLS + ((x + dx + COLS) % COLS)];
-      let sig = 0, polar = false;
-      if (at(0, -1) !== seaId) { sig |= 1; if (at(0, -1) === 82) polar = true; }
-      if (at(1, 0) !== seaId)  { sig |= 2; if (at(1, 0) === 82) polar = true; }
-      if (at(0, 1) !== seaId)  { sig |= 4; if (at(0, 1) === 82) polar = true; }
-      if (at(-1, 0) !== seaId) { sig |= 8; if (at(-1, 0) === 82) polar = true; }
-      if (!sig) continue;
-      const cands = SIG_MAP[sig] ?? [1];
-      if (polar) {
-        const snowy = cands.filter(t => SNOW_TILES.has(t));
-        if (snowy.length) { data[i] = snowy[Math.floor(rnd() * snowy.length)]; continue; }
+      let sig = 0;
+      const lands = [];
+      if (at(0, -1) !== seaId) { sig |= 1; lands.push(at(0, -1)); }
+      if (at(1, 0) !== seaId)  { sig |= 2; lands.push(at(1, 0)); }
+      if (at(0, 1) !== seaId)  { sig |= 4; lands.push(at(0, 1)); }
+      if (at(-1, 0) !== seaId) { sig |= 8; lands.push(at(-1, 0)); }
+      const polarBand = Math.min(z, ROWS - 1 - z) < ROWS * POLAR_BAND;
+      if (!sig) {
+        // polar open water gets ice chunks occasionally
+        if (polarBand && rnd() < 0.3) data[i] = 19;
+        continue;
       }
-      data[i] = cands[Math.floor(rnd() * cands.length)];
+      const cands = SIG_MAP[sig] ?? [1];
+      // dominant adjacent land class decides the shore color
+      const cls = landClass(lands[Math.floor(rnd() * lands.length)]);
+      const match = cands.filter(t => shoreClass(t) === cls);
+      const pool = match.length ? match : cands;
+      data[i] = pool[Math.floor(rnd() * pool.length)];
     }
   }
   return { data, sealedLakes: sealed };
