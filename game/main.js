@@ -304,14 +304,16 @@ const [startX, startZ] = sailableNear(lisbon.x, lisbon.y);
 const shipPos = new THREE.Vector3(startX, 0.4, startZ);
 
 // --- port markers: the original map icons (117 = city port, 121 = supply) ---
+// port icons are 2x2 tiles: city = 117-120, supply = 121-124
 function iconTexture(tid) {
   const img = phaseTex.day.image;
   const c = document.createElement('canvas');
-  c.width = c.height = 16;
+  c.width = c.height = 32;
   const g = c.getContext('2d');
-  g.drawImage(img, (tid - 1) % 16 * 16, ((tid - 1) / 16 | 0) * 16, 16, 16, 0, 0, 16, 16);
-  // chroma-key the sea-blue background of the icon tile
-  const d = g.getImageData(0, 0, 16, 16);
+  const sx = (tid - 1) % 16 * 16, sy = ((tid - 1) / 16 | 0) * 16;
+  g.drawImage(img, sx, sy, 32, 32, 0, 0, 32, 32);
+  // chroma-key the sea-blue background (sample the top-left pixel)
+  const d = g.getImageData(0, 0, 32, 32);
   const bg = g.getImageData(0, 0, 1, 1).data;
   for (let i = 0; i < d.data.length; i += 4) {
     if (Math.abs(d.data[i] - bg[0]) < 30 &&
