@@ -1904,6 +1904,41 @@ function terrainAt(z) {
   return 'plains';
 }
 
+// consumption settlement: runs TWICE per game day (midday + midnight),
+// each at half the daily rate
+function settleConsumption() {
+  if (scene === 'land') {
+    // expeditions eat and tire like in UW3
+    const terrain = terrainAt(landPos.z);
+    const drain = (terrain === 'snow' ? 4 : terrain === 'plains' ? 6 : 10) / 2;
+    P.provisions = Math.max(0, P.provisions - drain * boatswainFactor());
+    P.fatigue = Math.min(100, P.fatigue + (terrain === 'snow' ? 18 : 10) / 2 * (P.equipment.figurehead ? 0.5 : 1) * surgeonFactor());
+    if (P.provisions <= 0) {
+      P.hero.hp = Math.max(1, P.hero.hp - 3);
+      showBanner('Out of provisions!<small>the expedition is starving — find a town or your ship</small>');
+    }
+  }
+  if (scene === 'sea') {
+    // water & rations: more mouths to feed -> faster drain
+    const drain = (4 + P.crew * 0.25) / 2 * boatswainFactor();
+    P.provisions = Math.max(0, P.provisions - drain);
+    const starving = P.provisions <= 0;
+    // a starving crew tires far faster
+    P.fatigue = Math.min(100, P.fatigue + 6 * (starving ? 3 : 1)
+                 * (P.equipment.figurehead ? 0.5 : 1) * surgeonFactor() * chapelFactor());
+    if (starving) {
+      showBanner('Out of water and rations!<small>the crew is starving — fatigue soars; find a port</small>');
+    }
+    if (P.fatigue >= 100) {
+      // exhaustion kills fast: 15% of the crew per settlement (twice a day = ~30%/day)
+      const dead = Math.max(1, Math.ceil(P.crew * 0.15));
+      P.crew = Math.max(0, P.crew - dead);
+      if (P.crew <= 0) { gameOver('exhaustion'); return; }
+      showBanner(`${dead} sailors died of exhaustion!<small>lower fatigue — rest at an inn, lime juice, chapel</small>`);
+    }
+  }
+}
+
 function onNewDay() {
   P.days++;
   P.bank = Math.floor(P.bank * 1.02);          // 2% daily interest
@@ -1913,37 +1948,8 @@ function onNewDay() {
     const type = P.fleet[i] && cabinsOf(i)[j];
     if (type) gainSkillXp(+idStr, CABIN_SKILL[type], 1);
   }
-  if (scene === 'land') {
-    // expeditions eat and tire like in UW3
-    const terrain = terrainAt(landPos.z);
-    const drain = terrain === 'snow' ? 4 : terrain === 'plains' ? 6 : 10;
-    P.provisions = Math.max(0, P.provisions - drain * boatswainFactor());
-    P.fatigue = Math.min(100, P.fatigue + (terrain === 'snow' ? 18 : 10) * (P.equipment.figurehead ? 0.5 : 1) * surgeonFactor());
-    if (P.provisions <= 0) {
-      P.hero.hp = Math.max(1, P.hero.hp - 3);
-      showBanner('Out of provisions!<small>the expedition is starving — find a town or your ship</small>');
-    }
-  }
-  if (scene === 'sea') {
-    // water & rations: more mouths to feed -> faster drain
-    const drain = (4 + P.crew * 0.25) * boatswainFactor();
-    P.provisions = Math.max(0, P.provisions - drain);
-    const starving = P.provisions <= 0;
-    // a starving crew tires far faster
-    P.fatigue = Math.min(100, P.fatigue + 12 * (starving ? 3 : 1)
-                 * (P.equipment.figurehead ? 0.5 : 1) * surgeonFactor() * chapelFactor());
-    flag().hull = Math.max(0, flag().hull - 1);
-    if (starving) {
-      showBanner('Out of water and rations!<small>the crew is starving — fatigue soars; find a port</small>');
-    }
-    if (P.fatigue >= 100) {
-      // exhaustion kills: 10% of the crew per day at full fatigue
-      const dead = Math.max(1, Math.ceil(P.crew * 0.1));
-      P.crew = Math.max(0, P.crew - dead);
-      if (P.crew <= 0) { gameOver('exhaustion'); return; }
-      showBanner(`${dead} sailors died of exhaustion!<small>lower fatigue — rest at an inn, lime juice, chapel</small>`);
-    }
-  }
+  if (scene === 'sea') flag().hull = Math.max(0, flag().hull - 1);   // daily wear
+  settleConsumption();
   save();
 }
 
@@ -3946,7 +3952,11 @@ function tick() {
   const sailing = scene === 'sea' && moving;
   const prevGameTime = gameTime;
   gameTime = (gameTime + dt * (sailing ? SAIL_DAY_SCALE : 1)) % DAY_LENGTH_SEC;
-  if (started && !gameover && gameTime < prevGameTime) onNewDay();   // day wrapped
+  if (started && !gameover) {
+    if (gameTime < prevGameTime) onNewDay();          // midnight: new day + settlement
+    else if (prevGameTime < DAY_LENGTH_SEC / 2 && gameTime >= DAY_LENGTH_SEC / 2)
+      settleConsumption();                            // midday: second settlement
+  }
   const t = gameTime / DAY_LENGTH_SEC;            // 0..1
   const seg = Math.floor(t * 4);                  // current phase
   const segT = t * 4 - seg;
@@ -4027,10 +4037,25 @@ function tick() {
     updateBattle(dt);
 
     // --- HUD ---
+    const dailyDrain = (4 + P.crew * 0.25) * boatswainFactor();
+    const daysLeft = P.provisions > 0 ? Math.floor(P.provisions / dailyDrain) : 0;
+    const bar = (frac, color, markFrac = null) => {
+      const w = 90, h = 8;
+      const mark = markFrac == null ? '' :
+        `<div style="position:absolute;left:${Math.min(100, markFrac * 100)}%;top:-2px;width:2px;height:${h + 4}px;background:#ffd94d"></div>`;
+      return `<div style="display:inline-block;position:relative;width:${w}px;height:${h}px;` +
+             `background:#222;border:1px solid #8a6d3b;vertical-align:middle;margin:0 4px">` +
+             `<div style="width:${Math.min(100, Math.max(0, frac * 100))}%;height:100%;background:${color}"></div>${mark}</div>`;
+    };
+    const minC = fleetMinCrew(), maxC = fleetMaxCrew();
+    const crewLow = P.crew < minC;
+    const crewTxt = crewLow ? `<span style="color:#ff5b4d;font-weight:bold">${P.crew}</span>` : `${P.crew}`;
     hudTop.innerHTML =
       `<b>${fmtLonLat(shipPos.x, shipPos.z)}</b> · day ${P.days}<br>` +
-      `time: ${a} · speed: ${moving ? (curSpeed * 1.8).toFixed(1) : '0.0'} kn<br>` +
-      `gold: ${P.gold}g · food: ${P.provisions} · vigor: ${100 - P.fatigue} · hull: ${Math.ceil(flag().hull)} · crew: ${P.crew}`;
+      `time: ${a} · speed: ${moving ? (curSpeed * 1.8).toFixed(1) : '0.0'} kn · gold: ${P.gold}g · hull: ${Math.ceil(flag().hull)}<br>` +
+      `food: ${Math.floor(P.provisions)} (${daysLeft}d)${daysLeft <= 2 ? ' <span style="color:#ff5b4d">⚠</span>' : ''}<br>` +
+      `fatigue${bar(P.fatigue / 100, P.fatigue >= 90 ? '#ff5b4d' : P.fatigue >= 60 ? '#e6a23c' : '#5b8cff')} ${Math.floor(P.fatigue)}<br>` +
+      `crew${bar(P.crew / maxC, crewLow ? '#ff5b4d' : '#5bff8c', minC / maxC)} ${crewTxt}/${maxC}`;
   } else if (scene === 'port') {
     // --- walk in port ---
     if (moving) {
