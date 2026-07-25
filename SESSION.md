@@ -408,6 +408,19 @@ the uw2ol project, which took them from the original Uncharted Waters 2
   discovery locations (relocate to random land tiles).
 - Start overlay has a "Randomizer mode" panel with a seed input; the same
   seed produces the same world (verified), shown in the dev console.
+### 30. 地图结构随机（UWNHRando 旗舰特性）
+- Confirmed from the UWNHRando README: it randomizes the world map
+  itself (continent/archipelago placement, guaranteed-accessible ports).
+- `generateWorldMap()` in randomizer.js: 3-octave value noise +
+  land-percentage quantile threshold (16-24% land, polar suppression) +
+  ocean flood-fill so every water tile is reachable (circumnavigable);
+  land uses the original tile ids 74/66/82 for variety.
+- Enabling "map structure" forces relocation of all 131 ports (guaranteed
+  coastal + >=5 tiles apart), all discoveries, towns and ruins onto the
+  new land; the start position follows the new Lisbon.
+- snapCoast/snapLand now sample from precomputed coast/land tile lists
+  (one 2.3M-tile scan at boot) — random sampling missed coasts 99.4% of
+  the time on noise-generated maps and silently fell back to (840,358).
 ## Key file formats (cheat sheet)
 
 | Data | Format |

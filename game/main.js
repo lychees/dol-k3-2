@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { applyRandomizer } from './randomizer.js';
+import { applyRandomizer, generateWorldMap, mulberry32, hashSeed } from './randomizer.js';
 
 // ---------------------------------------------------------------------------
 // Constants (from uw2ol: code/common/constants.py)
@@ -49,7 +49,7 @@ const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, 
     loadTex('./assets/person-tileset.png', false),
     loadTex('./assets/npc_atlas.png', false),
   ]);
-const mapData = new Uint8Array(mapBuf);
+let mapData = new Uint8Array(mapBuf);
 const portMaps = new Uint8Array(portMapBuf);   // 101 maps of 96*96
 
 const phaseNames = ['dawn', 'day', 'dusk', 'night'];
@@ -90,37 +90,59 @@ const isLandTile = (x, z) => {
   const c = Math.floor(x), r = Math.floor(z);
   return c >= 0 && r >= 0 && c < COLS && r < ROWS && !SAILABLE.has(tileAt(c, r));
 };
-const snapCoast = rnd => {
-  for (let t = 0; t < 400; t++) {
-    const x = Math.floor(rnd() * COLS), z = Math.floor(rnd() * ROWS);
-    if (isLandTile(x, z) && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => !isLandTile(x + dx, z + dz))) {
-      return [x, z];
+// precomputed land/coast tile lists (coast = land with a SAILABLE neighbor)
+let landList = [], coastList = [];
+function buildGeoLists() {
+  landList = [];
+  coastList = [];
+  for (let z = 0; z < ROWS; z++) {
+    for (let x = 0; x < COLS; x++) {
+      if (isLandTile(x, z)) {
+        landList.push(x, z);
+        if (sailableAt(x + 1, z) || sailableAt(x - 1, z) ||
+            sailableAt(x, z + 1) || sailableAt(x, z - 1)) {
+          coastList.push(x, z);
+        }
+      }
     }
   }
-  return [840, 358];
+}
+const snapCoast = rnd => {
+  const i = Math.floor(rnd() * (coastList.length / 2)) * 2;
+  return [coastList[i], coastList[i + 1]];
 };
 const snapLand = rnd => {
-  for (let t = 0; t < 400; t++) {
-    const x = Math.floor(rnd() * COLS), z = Math.floor(rnd() * ROWS);
-    if (isLandTile(x, z)) return [x, z];
-  }
-  return [840, 358];
+  const i = Math.floor(rnd() * (landList.length / 2)) * 2;
+  return [landList[i], landList[i + 1]];
 };
 
 const RANDO_KEY = 'uw-rando';
 let randoSummary = null;
+let randoSeedStr = '';
 const randoPortDev = {};
 try {
   const ro = JSON.parse(localStorage.getItem(RANDO_KEY));
   if (ro && ro.seed) {
-    randoSummary = applyRandomizer(
+    randoSeedStr = ro.seed;
+    if (ro.mapStructure) {
+      // generate a brand new world map (UWNHRando's flagship feature)
+      const { data, sealedLakes } = generateWorldMap(
+        mulberry32(hashSeed(ro.seed) ^ 0x9e3779b9), COLS, ROWS, 1, [74, 66, 82]);
+      mapData = data;
+      randoSummary = { seed: ro.seed, mapStructure: true, sealedLakes };
+    }
+    buildGeoLists();
+    const summary = applyRandomizer(
       { seed: ro.seed, markets: ro.markets ?? true, specialties: ro.specialties ?? true,
         startShip: ro.startShip ?? true, portDev: ro.portDev ?? true,
-        portLocations: ro.portLocations ?? false, discoveries: ro.discoveries ?? false },
+        // a new map forces relocation of ports and discoveries
+        portLocations: ro.mapStructure ? true : (ro.portLocations ?? false),
+        discoveries: ro.mapStructure ? true : (ro.discoveries ?? false) },
       { goodsData, villages, ports, portMeta,
         portRegion: pid => (portMeta[pid] ?? portMeta[Math.min(pid, 101)])?.region,
         portDev: randoPortDev, snapCoast, snapLand,
         ships: Object.entries(shipData).map(([name, a]) => ({ name, ...a })) });
+    randoSummary = { ...(randoSummary ?? {}), ...summary, seed: summary.seed ?? randoSummary?.seed };
   }
 } catch (e) { console.warn('randomizer failed', e); }
 
@@ -236,8 +258,10 @@ function updateShipSprite() {
   shipFrame(shipMap, shipDir, animFrame, curShip().row);   // sprite row by ship size
 }
 
-// start position: just off Lisbon (port tile 840,358 is land; sea to the west)
-const shipPos = new THREE.Vector3(834, 0.4, 360);
+// start position: just off Lisbon (relocated when the map is randomized)
+const lisbon = ports.find(p => p.id === 1);
+const [startX, startZ] = sailableNear(lisbon.x, lisbon.y);
+const shipPos = new THREE.Vector3(startX, 0.4, startZ);
 
 // --- port markers ---
 const markerTex = makeDotTexture();
@@ -1442,6 +1466,12 @@ try {
   if (s && typeof s === 'object') P = { ...P, ...s };
 } catch { /* fresh game */ }
 // randomizer injections for a fresh randomized game
+if (randoSummary?.mapStructure) {
+  // towns & ruins must sit on the new land
+  const rr = mulberry32(hashSeed(randoSeedStr || '1') ^ 0x51ab3f);
+  for (const t of towns) { const [x, z] = snapLand(rr); t.x = x; t.z = z; }
+  for (const r of ruins) { const [x, z] = snapLand(rr); r.x = x; r.z = z; }
+}
 if (randoSummary) {
   if (!localStorage.getItem(SAVE_KEY)) {
     if (randoSummary.portDev) P.portDev = { ...randoPortDev };
@@ -3509,6 +3539,9 @@ window.UW = {
                                ex: battle.enemy.pos.x, ez: battle.enemy.pos.z },
   getPirates: () => pirates.length,
   getNpcs: () => ({ wanderers: npcs.length, static: staticNpcs.length }),
+  mapProbe: (x, z) => ({ tile: tileAt(Math.floor(x), Math.floor(z)),
+                         sailable: sailableAt(x, z), land: isLandTile(x, z) }),
+  getData: () => ({ ports, villages, towns, ruins }),
   debugNpcDir: dir => {
     const n = npcs[0];
     if (!n) return null;
@@ -3587,6 +3620,7 @@ document.getElementById('rando-start').addEventListener('click', e => {
     portDev: document.getElementById('ro-portdev').checked,
     portLocations: document.getElementById('ro-portloc').checked,
     discoveries: document.getElementById('ro-disc').checked,
+    mapStructure: document.getElementById('ro-mapstruct').checked,
   }));
   localStorage.removeItem(SAVE_KEY);
   location.reload();

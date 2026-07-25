@@ -102,7 +102,7 @@ function randomizeSpecialties(rnd, regionsRnd, portRegion, ports) {
 function randomizePorts(rnd, ports, snapCoast) {
   const used = [];
   return ports.map(p => {
-    const [x, y] = snapCoast(rnd);
+    let [x, y] = snapCoast(rnd);
     // keep ports apart
     for (let tries = 0; tries < 20; tries++) {
       if (used.every(([ux, uy]) => Math.hypot(ux - x, uy - y) >= 8)) break;
@@ -118,6 +118,68 @@ function randomizeDiscoveries(rnd, villages, snapLand) {
     const [x, y] = snapLand(rnd);
     return { ...v, x, y };
   });
+}
+
+// --- world map structure generation ---------------------------------------------
+// 3-octave value noise -> threshold at a land-percentage quantile, then
+// flood-fill the ocean so all water is reachable (circumnavigable).
+function valueNoise(rnd, gw, gh, cols, rows) {
+  const grid = new Float32Array(gw * gh);
+  for (let i = 0; i < grid.length; i++) grid[i] = rnd();
+  const s = t => t * t * (3 - 2 * t);
+  return (x, z) => {
+    const gx = x / cols * (gw - 1), gz = z / rows * (gh - 1);
+    const x0 = Math.floor(gx), z0 = Math.floor(gz);
+    const x1 = Math.min(x0 + 1, gw - 1), z1 = Math.min(z0 + 1, gh - 1);
+    const fx = s(gx - x0), fz = s(gz - z0);
+    const v00 = grid[z0 * gw + x0], v10 = grid[z0 * gw + x1];
+    const v01 = grid[z1 * gw + x0], v11 = grid[z1 * gw + x1];
+    return v00 + (v10 - v00) * fx + (v01 - v00) * fz + (v00 - v10 - v01 + v11) * fx * fz;
+  };
+}
+
+export function generateWorldMap(rnd, COLS, ROWS, seaId, landIds) {
+  const n1 = valueNoise(rnd, 10, 6, COLS, ROWS);
+  const n2 = valueNoise(rnd, 24, 12, COLS, ROWS);
+  const n3 = valueNoise(rnd, 60, 30, COLS, ROWS);
+  const val = new Float32Array(COLS * ROWS);
+  const LAND_PCT = 0.16 + rnd() * 0.08;      // 16-24% land
+  for (let z = 0; z < ROWS; z++) {
+    for (let x = 0; x < COLS; x++) {
+      const i = z * COLS + x;
+      // suppress land near the poles, like the original
+      const polar = z < ROWS * 0.06 || z > ROWS * 0.94 ? 0.15 : 0;
+      val[i] = 0.55 * n1(x, z) + 0.3 * n2(x, z) + 0.15 * n3(x, z) - polar;
+    }
+  }
+  const sorted = Float32Array.from(val).sort();
+  const thr = sorted[Math.floor((1 - LAND_PCT) * sorted.length)];
+  const data = new Uint8Array(COLS * ROWS).fill(seaId);
+  const n4 = valueNoise(rnd, 40, 20, COLS, ROWS);
+  for (let i = 0; i < data.length; i++) {
+    if (val[i] >= thr) {
+      const t = n4((i % COLS), (i / COLS) | 0);
+      data[i] = t < 0.7 ? landIds[0] : t < 0.95 ? landIds[1] : landIds[2];
+    }
+  }
+  // ocean connectivity: flood fill from (0,0); unreachable water becomes land
+  const reach = new Uint8Array(COLS * ROWS);
+  const q = [[0, 0]];
+  reach[0] = 1;
+  while (q.length) {
+    const [x, z] = q.pop();
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, nz = z + dz;
+      if (nx < 0 || nz < 0 || nx >= COLS || nz >= ROWS) continue;
+      const ni = nz * COLS + nx;
+      if (!reach[ni] && data[ni] === seaId) { reach[ni] = 1; q.push([nx, nz]); }
+    }
+  }
+  let sealed = 0;
+  for (let i = 0; i < data.length; i++) {
+    if (data[i] === seaId && !reach[i]) { data[i] = landIds[0]; sealed++; }
+  }
+  return { data, sealedLakes: sealed };
 }
 
 // --- main entry ------------------------------------------------------------------
