@@ -116,6 +116,11 @@ const wrapX = x => ((x % COLS) + COLS) % COLS;
 const wrapZ = z => ((z % ROWS) + ROWS) % ROWS;
 const tileAt = (col, row) => mapData[wrapZ(row) * COLS + wrapX(col)];
 const sailableAt = (x, z) => SAILABLE.has(tileAt(Math.floor(x), Math.floor(z)));
+// shortest distance on the torus (wrap-aware)
+const distT = (ax, az, bx, bz) => {
+  const dx = Math.abs(ax - bx), dz = Math.abs(az - bz);
+  return Math.hypot(Math.min(dx, COLS - dx), Math.min(dz, ROWS - dz));
+};
 
 // --- randomizer (UWNHRando-style): applied at boot when a seed is stored ----
 const isLandTile = (x, z) => !SAILABLE.has(tileAt(Math.floor(x), Math.floor(z)));
@@ -562,6 +567,7 @@ function setSail() {
 function exitPortToLand() {
   scene = 'land';
   inBuilding = null;
+  buildingNear = null;         // forget the port's buildings — we're outside now
   quickbar.style.display = 'none';
   closeDialog();
   hideBuildingPanel();
@@ -1189,9 +1195,8 @@ const mateDef = id => Math.floor((matesData[id]?.lv ?? 1) / 3);
 const mateHpOf = id => P.mateHp[id] ?? mateMaxHp(id);
 
 function landAt(x, z) {   // walkable for a person: land tiles (not sailable water)
-  const c = Math.floor(x), r = Math.floor(z);
-  if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return false;
-  return !SAILABLE.has(tileAt(c, r));
+  // tileAt wraps toroidally, so no bounds check — the world is seamless
+  return !SAILABLE.has(tileAt(Math.floor(x), Math.floor(z)));
 }
 
 function landOn() {
@@ -1217,7 +1222,7 @@ function landOn() {
 }
 
 function reboard() {
-  if (Math.hypot(landPos.x - shipPos.x, landPos.z - shipPos.z) > 2.5) {
+  if (distT(landPos.x, landPos.z, shipPos.x, shipPos.z) > 2.5) {
     showBanner('Your ship is too far — walk back to it');
     return;
   }
@@ -1404,7 +1409,7 @@ function nearestTown() {
   if (scene !== 'land') return null;
   let best = null, bestD = 4;
   for (const t of towns) {
-    const d = Math.hypot(t.x - landPos.x, t.z - landPos.z);
+    const d = distT(t.x, t.z, landPos.x, landPos.z);
     if (d < bestD) { best = t; bestD = d; }
   }
   return best;
@@ -1413,7 +1418,7 @@ function nearestTown() {
 function nearestSeaTown() {
   let best = null, bestD = 4;
   for (const t of towns) {
-    const d = Math.hypot(t.x - shipPos.x, t.z - shipPos.z);
+    const d = distT(t.x, t.z, shipPos.x, shipPos.z);
     if (d < bestD) { best = t; bestD = d; }
   }
   return best;
@@ -1422,7 +1427,7 @@ function nearestSeaTown() {
 function nearestSeaRuin() {
   let best = null, bestD = 4;
   for (const r of ruins) {
-    const d = Math.hypot(r.x - shipPos.x, r.z - shipPos.z);
+    const d = distT(r.x, r.z, shipPos.x, shipPos.z);
     if (d < bestD) { best = r; bestD = d; }
   }
   return best;
@@ -1432,7 +1437,7 @@ function nearestRuin() {
   if (scene !== 'land') return null;
   let best = null, bestD = 4;
   for (const r of ruins) {
-    const d = Math.hypot(r.x - landPos.x, r.z - landPos.z);
+    const d = distT(r.x, r.z, landPos.x, landPos.z);
     if (d < bestD) { best = r; bestD = d; }
   }
   return best;
@@ -3455,7 +3460,7 @@ function onUseKey() {
     const np = (() => {
       let best = null, bestD = 4;
       for (const p of ports) {
-        const d = Math.hypot(p.x - landPos.x, p.y - landPos.z);
+        const d = distT(p.x, p.y, landPos.x, landPos.z);
         if (d < bestD) { best = p; bestD = d; }
       }
       return best;
@@ -3753,6 +3758,7 @@ window.UW = {
   teleport: (x, z) => { shipPos.x = x; shipPos.z = z; },
   walkTo: (x, z) => { personPos.x = x; personPos.z = z; },
   landTo: (x, z) => { landPos.x = x; landPos.z = z; },
+  getLandPos: () => ({ x: landPos.x, z: landPos.z }),
   getMusic: () => audio.dataset.cur,
   getSfx: () => sfx.src,
   P,                                        // player state (gold, cargo, ...)
@@ -4059,7 +4065,7 @@ function tick() {
       // discover sites by walking to them
       for (const v of villages) {
         if (discoveriesFound.has(v.id)) continue;
-        if (Math.hypot(v.x - landPos.x, v.y - landPos.z) < 1.5) {
+        if (distT(v.x, v.y, landPos.x, landPos.z) < 1.5) {
           goAshore(v);
           break;
         }
@@ -4073,11 +4079,11 @@ function tick() {
     camera.position.set(landPos.x, camDist * Math.cos(CAM_TILT), landPos.z + camDist * Math.sin(CAM_TILT));
     camera.lookAt(landPos.x, 0, landPos.z);
 
-    const nearShip = Math.hypot(landPos.x - shipPos.x, landPos.z - shipPos.z) <= 2.5;
+    const nearShip = distT(landPos.x, landPos.z, shipPos.x, shipPos.z) <= 2.5;
     const nearPortLand = (() => {
       let best = null, bestD = 4;
       for (const p of ports) {
-        const d = Math.hypot(p.x - landPos.x, p.y - landPos.z);
+        const d = distT(p.x, p.y, landPos.x, landPos.z);
         if (d < bestD) { best = p; bestD = d; }
       }
       return best;
