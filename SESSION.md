@@ -388,6 +388,15 @@ the uw2ol project, which took them from the original Uncharted Waters 2
   sell, Lookout +1 tile/lv sight, Sick bay -2%/lv fatigue, Kitchen
   -2%/lv food, Chapel -1.5%/lv fatigue, Captain +1%/lv melee.
 - Mate cards show the top 3 skills with levels.
+### 28. Jephed 像素人物包导入
+- Integrated the free "Top Down Pixel Art Characters" pack by Jephed,
+  Game Between The Lines (free for commercial/non-commercial use,
+  credited in README): 40 characters (64x128 sheets, 20x32 cells,
+  down/right/up/left x idle/walk) packed into one 512x640 atlas
+  (`npc_atlas.png`).
+- Port wanderers are now 6 random distinct pack characters with proper
+  4-direction walk animation (idle col 0, walk cols 1/2), replacing the
+  two uw2ol man/woman sprites; static door NPCs unchanged.
 ## Key file formats (cheat sheet)
 
 | Data | Format |

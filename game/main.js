@@ -30,7 +30,7 @@ const CAM_TILT = 0.35;                  // radians from vertical
 // ---------------------------------------------------------------------------
 // Boot: load all assets, then init
 // ---------------------------------------------------------------------------
-const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, shipData, matesData, maidsData, towns, ruins, shipTex, personTex] =
+const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, shipData, matesData, maidsData, towns, ruins, shipTex, personTex, npcAtlasTex] =
   await Promise.all([
     fetch('./assets/world_map.bin').then(r => r.arrayBuffer()),
     fetch('./assets/portmaps.bin').then(r => r.arrayBuffer()),
@@ -46,6 +46,7 @@ const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, 
     fetch('./assets/ruins.json').then(r => r.json()),
     loadTex('./assets/ship-tileset.png', false),
     loadTex('./assets/person-tileset.png', false),
+    loadTex('./assets/npc_atlas.png', false),
   ]);
 const mapData = new Uint8Array(mapBuf);
 const portMaps = new Uint8Array(portMapBuf);   // 101 maps of 96*96
@@ -836,6 +837,29 @@ function makeNpcMesh(frameIdx) {
   return mesh;
 }
 
+// Jephed's top-down pixel art characters (40 chars in npc_atlas.png, 8x5 sheets)
+// per character: 3 cols x 4 rows of 20x32 cells; rows: down/right/up/left
+const ATLAS_W = 512, ATLAS_H = 640;
+const PACK_DIR_ROW = { down: 0, right: 1, up: 2, left: 3 };
+
+function makePackNpcMesh(charIdx) {
+  const map = npcAtlasTex.clone();
+  map.needsUpdate = true;
+  map.repeat.set(20 / ATLAS_W, 32 / ATLAS_H);
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.25, 2),
+    new THREE.MeshBasicMaterial({ map, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide }));
+  mesh.rotation.x = -Math.PI / 2;
+  setPackNpcFrame(mesh, charIdx, 'down', 0);
+  return mesh;
+}
+
+function setPackNpcFrame(mesh, charIdx, dir, frameCol) {
+  const cx = (charIdx % 8) * 64 + frameCol * 20;
+  const cy = Math.floor(charIdx / 8) * 128 + PACK_DIR_ROW[dir] * 32;
+  mesh.material.map.offset.set(cx / ATLAS_W, 1 - (cy + 32) / ATLAS_H);
+}
+
 const NPC_FRAMES = {
   man:   { up: 16, right: 18, down: 20, left: 22 },
   woman: { up: 8,  right: 10, down: 12, left: 14 },
@@ -852,21 +876,25 @@ function spawnPortNpcs() {
   npcs = [];
   staticNpcs = [];
 
-  // 2 men + 2 women wandering near the harbor
+  // wanderers near the harbor — Jephed pack characters
   const harbor = portBuildings.find(b => b.id === 4);
   const cx = harbor ? harbor.x : 48, cz = harbor ? harbor.y + 2 : 60;
-  for (let i = 0; i < 4; i++) {
-    const kind = i % 2 === 0 ? 'man' : 'woman';
+  const usedChars = new Set();
+  for (let i = 0; i < 6; i++) {
+    let charIdx;
+    do { charIdx = Math.floor(Math.random() * 40); } while (usedChars.has(charIdx));
+    usedChars.add(charIdx);
     let sx = cx + 0.5, sz = cz + 0.5;
     for (let t = 0; t < 20; t++) {
       const x = cx + Math.floor(Math.random() * 17 - 8) + 0.5;
       const z = cz + Math.floor(Math.random() * 17 - 8) + 0.5;
       if (walkableAt(x, z)) { sx = x; sz = z; break; }
     }
-    const mesh = makeNpcMesh(NPC_FRAMES[kind].down);
+    const kind = i % 2 === 0 ? 'man' : 'woman';
+    const mesh = makePackNpcMesh(charIdx);
     mesh.position.set(sx, 0.4, sz);
     portScene.add(mesh);
-    npcs.push({ kind, mesh, pos: new THREE.Vector3(sx, 0.4, sz), dir: 'down',
+    npcs.push({ kind, charIdx, mesh, pos: new THREE.Vector3(sx, 0.4, sz), dir: 'down',
                 frame: 0, animT: Math.random() * 0.3, moveT: 0, mvx: 0, mvz: 0 });
   }
 
@@ -907,7 +935,9 @@ function updateNpcs(dt, phase) {
       if (n.animT > 0.35) { n.animT = 0; n.frame ^= 1; }
     }
     n.mesh.position.copy(n.pos);
-    n.mesh.material.map.offset.set((NPC_FRAMES[n.kind][n.dir] + n.frame) / 32, 0);
+    // pack: idle = col 0, walking = cols 1/2 alternating
+    const col = (n.mvx || n.mvz) ? 1 + n.frame : 0;
+    setPackNpcFrame(n.mesh, n.charIdx, n.dir, col);
   }
   for (const s of staticNpcs) {
     s.mesh.visible = visible;

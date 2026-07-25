@@ -62,3 +62,7 @@ python -m http.server 8734
 
 All game assets are extracted from uw2ol, which took them from the original
 Uncharted Waters 2 (Koei, 1993). Non-commercial fan/educational use only.
+
+Port NPC characters: **Jephed, Game Between The Lines,
+https://gamebetweenthelines.com/** (Top Down Pixel Art Characters pack,
+free for commercial & non-commercial use).

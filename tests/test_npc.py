@@ -34,7 +34,7 @@ with sync_playwright() as p:
     page.evaluate("window.UW.enterPort(1)")
     page.wait_for_timeout(1500)
     st = page.evaluate("window.UW.getNpcs()")
-    check(f"NPCs spawned ({st})", st["wanderers"] == 4 and st["static"] >= 3)
+    check(f"NPCs spawned ({st})", st["wanderers"] == 6 and st["static"] >= 3)
     page.screenshot(path="tests/screenshots/npc_port.png")
 
     # wanderers move and animate
