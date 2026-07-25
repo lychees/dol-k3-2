@@ -1377,6 +1377,24 @@ function nearestTown() {
   return best;
 }
 
+function nearestSeaTown() {
+  let best = null, bestD = 4;
+  for (const t of towns) {
+    const d = Math.hypot(t.x - shipPos.x, t.z - shipPos.z);
+    if (d < bestD) { best = t; bestD = d; }
+  }
+  return best;
+}
+
+function nearestSeaRuin() {
+  let best = null, bestD = 4;
+  for (const r of ruins) {
+    const d = Math.hypot(r.x - shipPos.x, r.z - shipPos.z);
+    if (d < bestD) { best = r; bestD = d; }
+  }
+  return best;
+}
+
 function nearestRuin() {
   if (scene !== 'land') return null;
   let best = null, bestD = 4;
@@ -3346,8 +3364,12 @@ function onUseKey() {
       digTreasure(q);
       return;
     }
+    const tn = nearestSeaTown();
+    const rn = nearestSeaRuin();
     const p = nearestPort();
     if (p) enterPort(p.id);
+    else if (tn) openTown(tn);
+    else if (rn && !ruinCooldown(rn.id)) startRuin(rn);
   } else if (inBuilding) {
     hideBuildingPanel();
   } else if (buildingNear) {
@@ -3843,9 +3865,14 @@ function tick() {
     const tq = P.jobQuest;
     const nearTreasure = !battle && tq?.type === 'treasure' && !tq.done &&
                          Math.hypot(tq.x - shipPos.x, tq.z - shipPos.z) < 3;
+    const tn = battle ? null : nearestSeaTown();
+    const rn = battle || tn ? null : nearestSeaRuin();
     showHint(nearTreasure ? `<span class="key">E</span> dig for treasure!`
              : canBoard() ? `<span class="key">B</span> board them — melee fight!`
              : p ? `<span class="key">E</span> enter ${p.name}`
+             : tn ? `<span class="key">E</span> enter ${tn.name}`
+             : rn ? (ruinCooldown(rn.id) ? `${rn.name} — already explored`
+                   : `<span class="key">E</span> explore ${rn.name}`)
              : v ? `<span class="key">G</span> go ashore — something seems interesting here`
              : null);
 
