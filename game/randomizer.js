@@ -162,14 +162,29 @@ export function generateWorldMap(rnd, COLS, ROWS, seaId, landIds) {
       data[i] = t < 0.7 ? landIds[0] : t < 0.95 ? landIds[1] : landIds[2];
     }
   }
-  // polar ice caps (north & south bands, like the original's arctic scenery)
+  // polar ice caps: scenery only — never seal the routes.
+  // sparse snowy band + guaranteed navigable channels through each cap.
   const POLAR = 0.045;
+  const channels = [];
+  for (const pole of [0, 1]) {
+    for (let c = 0; c < 2; c++) channels.push(Math.floor(rnd() * COLS));
+  }
   for (let z = 0; z < ROWS; z++) {
-    if (Math.min(z, ROWS - 1 - z) >= ROWS * POLAR) continue;
+    const inNorth = z < ROWS * POLAR;
+    const inSouth = z > ROWS * (1 - POLAR);
+    if (!inNorth && !inSouth) continue;
     for (let x = 0; x < COLS; x++) {
       const i = z * COLS + x;
-      // jagged icy cap: mostly snow land, with a few water channels
-      data[i] = n4(x, z) > 0.18 ? 82 : seaId;
+      // carved channel: always open water, 4 tiles wide
+      const chIdx = inNorth ? [0, 1] : [2, 3];
+      if (chIdx.some(c => Math.abs(x - channels[c]) <= 2 ||
+                          Math.abs(x - channels[c] + COLS) <= 2 ||
+                          Math.abs(x - channels[c] - COLS) <= 2)) {
+        data[i] = seaId;
+        continue;
+      }
+      // icy-water mix: looks polar, mostly navigable
+      data[i] = n4(x, z) > 0.32 ? 82 : seaId;
     }
   }
 
