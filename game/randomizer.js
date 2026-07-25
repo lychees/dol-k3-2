@@ -156,38 +156,18 @@ export function generateWorldMap(rnd, COLS, ROWS, seaId, landIds) {
   const thr = sorted[Math.floor((1 - LAND_PCT) * sorted.length)];
   const data = new Uint8Array(COLS * ROWS).fill(seaId);
   const n4 = valueNoise(rnd, 40, 20, COLS, ROWS);
+  const POLAR = 0.045;
   for (let i = 0; i < data.length; i++) {
     if (val[i] >= thr) {
-      const t = n4((i % COLS), (i / COLS) | 0);
+      const z = (i / COLS) | 0;
+      if (Math.min(z, ROWS - 1 - z) < ROWS * POLAR) {
+        data[i] = landIds[2];            // polar land renders as snow
+        continue;
+      }
+      const t = n4((i % COLS), z);
       data[i] = t < 0.7 ? landIds[0] : t < 0.95 ? landIds[1] : landIds[2];
     }
   }
-  // polar ice caps: scenery only — never seal the routes.
-  // sparse snowy band + guaranteed navigable channels through each cap.
-  const POLAR = 0.045;
-  const channels = [];
-  for (const pole of [0, 1]) {
-    for (let c = 0; c < 2; c++) channels.push(Math.floor(rnd() * COLS));
-  }
-  for (let z = 0; z < ROWS; z++) {
-    const inNorth = z < ROWS * POLAR;
-    const inSouth = z > ROWS * (1 - POLAR);
-    if (!inNorth && !inSouth) continue;
-    for (let x = 0; x < COLS; x++) {
-      const i = z * COLS + x;
-      // carved channel: always open water, 4 tiles wide
-      const chIdx = inNorth ? [0, 1] : [2, 3];
-      if (chIdx.some(c => Math.abs(x - channels[c]) <= 2 ||
-                          Math.abs(x - channels[c] + COLS) <= 2 ||
-                          Math.abs(x - channels[c] - COLS) <= 2)) {
-        data[i] = seaId;
-        continue;
-      }
-      // icy-water mix: looks polar, mostly navigable
-      data[i] = n4(x, z) > 0.32 ? 82 : seaId;
-    }
-  }
-
   // ocean connectivity: flood fill from every WATER tile on the map edge.
   // (starting in a random inland lake would seal the MAIN ocean instead!)
   const reach = new Uint8Array(COLS * ROWS);
