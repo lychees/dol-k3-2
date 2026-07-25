@@ -458,7 +458,9 @@ function renderQuickbar() {
 }
 
 // port state
-let scene = 'sea';              // 'sea' | 'port'
+let scene = 'sea';              // 'sea' | 'port' | 'land'
+let landExpedition = false;     // ship left anchored nearby while exploring on foot
+let portReturnPos = null;       // land coords to return to when leaving a port on foot
 let portId = null;              // 1-based port id (ports.json)
 let portData = null;            // Uint8Array view of the 96x96 map
 let portWalkMax = PORT_WALK_MAX;
@@ -479,6 +481,9 @@ const walkableAt = (x, z) => {
 const PORT_MAP_OVERRIDE = { 131: 94 };   // Tamsui walks Zeiton's streets
 
 async function enterPort(pid) {
+  // arriving on foot (land expedition): remember where to walk back to
+  if (scene === 'land') portReturnPos = { x: landPos.x, z: landPos.z };
+  else if (scene === 'sea') portReturnPos = null;
   const meta = portMeta[pid] ?? portMeta[Math.min(pid, 101)];
   const mapIdx = PORT_MAP_OVERRIDE[pid] ?? Math.min(pid - 1, 100);
   const tsFile = String(meta.tileset * 2).padStart(3, '0');
@@ -529,12 +534,18 @@ async function enterPort(pid) {
   endBattle();                    // reaching port shakes off any pursuers
   spawnPortNpcs();
   const name = ports.find(p => p.id === pid)?.name ?? meta.name;
-  showBanner(`${name}<small>press Esc at any time to set sail</small>`);
+  showBanner(portReturnPos
+    ? `${name}<small>your ship is anchored off the coast — press Esc to leave on foot</small>`
+    : `${name}<small>press Esc at any time to set sail</small>`);
   playMusic(portMusicFor(pid));
   buildPortMinimap();
 }
 
 function setSail() {
+  if (landExpedition) {
+    showBanner('Your ship is anchored off the coast<small>leave the city on foot and press L near your ship to re-board</small>');
+    return;
+  }
   scene = 'sea';
   inBuilding = null;
   quickbar.style.display = 'none';
@@ -545,6 +556,22 @@ function setSail() {
   showBanner(`Set sail from ${name}`);
   playSfx('./assets/sounds/wave.ogg');
   playMusic(seaMusicFor(portId));
+}
+
+// leave a port on foot during a land expedition (no sailing allowed)
+function exitPortToLand() {
+  scene = 'land';
+  inBuilding = null;
+  quickbar.style.display = 'none';
+  closeDialog();
+  hideBuildingPanel();
+  camDist = 16;
+  if (portReturnPos) landPos.set(portReturnPos.x, 0.4, portReturnPos.z);
+  landDir = 'down';
+  landPerson.visible = true;
+  landPerson.position.copy(landPos);
+  updateLandPersonSprite();
+  showBanner('Back to the wilds<small>return to your ship and press L to re-board</small>');
 }
 
 // ---------------------------------------------------------------------------
@@ -1174,6 +1201,7 @@ function landOn() {
     if (landAt(x, z)) {
       landPos.set(x, 0.4, z);
       scene = 'land';
+      landExpedition = true;
       camDist = 16;
       landDir = 'down';
       landPerson.visible = true;
@@ -1194,6 +1222,8 @@ function reboard() {
     return;
   }
   scene = 'sea';
+  landExpedition = false;
+  portReturnPos = null;
   camDist = 34;
   landPerson.visible = false;
   showBanner('Back aboard');
@@ -1442,7 +1472,7 @@ function openTown(t) {
   const shipDist = Math.hypot(t.x - shipPos.x, t.z - shipPos.z);
   const coastal = [[1, 0], [-1, 0], [0, 1], [0, -1], [2, 0], [-2, 0], [0, 2], [0, -2]]
     .some(([dx, dz]) => sailableAt(t.x + dx, t.z + dz));
-  if (coastal && shipDist > 6) {
+  if (coastal && shipDist > 6 && !landExpedition) {
     mk('Buy a ship & set sail (1000g)', () => {
       if (P.gold < 1000) return;
       P.gold -= 1000;
@@ -1960,17 +1990,21 @@ function buildingMenu(b) {
           action() { P.gold -= 100 - P.provisions; P.provisions = 100;
                      setBuildingText('Provisions loaded. The crew is ready.'); } },
       ];
-      const here = ports.find(p => p.id === portId);
-      const shipHere = here && Math.hypot(shipPos.x - here.x, shipPos.z - here.y) <= 6;
-      if (shipHere) {
-        menu.push({ label: 'Set sail', action() { setSail(); } });
+      if (landExpedition) {
+        menu.push({ label: 'Leave the city (on foot)', action() { exitPortToLand(); } });
       } else {
-        menu.push({ label: 'Buy a new ship & set sail', cost: 1000, action() {
-          P.gold -= 1000;
-          const [x, z] = sailableNear(here.x, here.y);
-          shipPos.set(x, 0.4, z);
-          setSail();
-        } });
+        const here = ports.find(p => p.id === portId);
+        const shipHere = here && Math.hypot(shipPos.x - here.x, shipPos.z - here.y) <= 6;
+        if (shipHere) {
+          menu.push({ label: 'Set sail', action() { setSail(); } });
+        } else {
+          menu.push({ label: 'Buy a new ship & set sail', cost: 1000, action() {
+            P.gold -= 1000;
+            const [x, z] = sailableNear(here.x, here.y);
+            shipPos.set(x, 0.4, z);
+            setSail();
+          } });
+        }
       }
       return menu;
     }
@@ -3449,6 +3483,7 @@ function onEscapeKey() {
   if (closeTopPanel()) return;
   if (scene === 'port') {
     if (inBuilding) hideBuildingPanel();
+    else if (landExpedition) exitPortToLand();
     else setSail();
   }
 }
@@ -3515,6 +3550,8 @@ function refreshDevPanel() {
     const p = ports.find(x => x.id === pid);
     if (!p) return;
     endBattle();                       // teleporting shakes off any pursuers
+    landExpedition = false;            // dev teleport abandons the expedition
+    portReturnPos = null;
     if (scene === 'port') setSail();
     closeAllDevPanels();
     const [x, z] = sailableNear(p.x, p.y);
