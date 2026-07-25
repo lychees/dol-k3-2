@@ -303,27 +303,70 @@ const lisbon = ports.find(p => p.id === 1);
 const [startX, startZ] = sailableNear(lisbon.x, lisbon.y);
 const shipPos = new THREE.Vector3(startX, 0.4, startZ);
 
-// --- port markers ---
-const markerTex = makeDotTexture();
-const portGeo = new THREE.BufferGeometry();
-{
-  const pos = new Float32Array(ports.length * 3);
-  ports.forEach((p, i) => { pos.set([p.x + 0.5, 0.6, p.y + 0.5], i * 3); });
-  portGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+// --- port markers: the original map icons (117 = city port, 121 = supply) ---
+function iconTexture(tid) {
+  const img = phaseTex.day.image;
+  const c = document.createElement('canvas');
+  c.width = c.height = 16;
+  const g = c.getContext('2d');
+  g.drawImage(img, (tid - 1) % 16 * 16, ((tid - 1) / 16 | 0) * 16, 16, 16, 0, 0, 16, 16);
+  // chroma-key the sea-blue background of the icon tile
+  const d = g.getImageData(0, 0, 16, 16);
+  const bg = g.getImageData(0, 0, 1, 1).data;
+  for (let i = 0; i < d.data.length; i += 4) {
+    if (Math.abs(d.data[i] - bg[0]) < 30 &&
+        Math.abs(d.data[i + 1] - bg[1]) < 30 &&
+        Math.abs(d.data[i + 2] - bg[2]) < 30) {
+      d.data[i + 3] = 0;
+    }
+  }
+  g.putImageData(d, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.magFilter = THREE.NearestFilter;
+  return t;
 }
-const portPoints = new THREE.Points(portGeo, new THREE.PointsMaterial({
-  map: markerTex, size: 2.2, transparent: true, depthWrite: false,
-  color: 0xffd94d, sizeAttenuation: true,
-}));
+const portIconTex = iconTexture(117);
+const supplyIconTex = iconTexture(121);
+
+function makePortPoints(list, tex) {
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(list.length * 3);
+  list.forEach((p, i) => { pos.set([p.x + 0.5, 0.6, p.y + 0.5], i * 3); });
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  return new THREE.Points(geo, new THREE.PointsMaterial({
+    map: tex, size: 2.2, transparent: true, depthWrite: false, sizeAttenuation: true,
+  }));
+}
+const cityPorts = ports.filter(p => p.id <= 101);
+const supplyPorts = ports.filter(p => p.id > 101);
+const portPoints = makePortPoints(cityPorts, portIconTex);
+const supplyPoints = makePortPoints(supplyPorts, supplyIconTex);
 seaScene.add(portPoints);
-for (let ox = -1; ox <= 1; ox++) {
-  for (let oz = -1; oz <= 1; oz++) {
-    if (ox === 0 && oz === 0) continue;
-    const pp = new THREE.Points(portGeo, portPoints.material);
-    pp.position.set(ox * COLS, 0, oz * ROWS);
-    seaScene.add(pp);
+seaScene.add(supplyPoints);
+for (const base of [portPoints, supplyPoints]) {
+  for (let ox = -1; ox <= 1; ox++) {
+    for (let oz = -1; oz <= 1; oz++) {
+      if (ox === 0 && oz === 0) continue;
+      const pp = new THREE.Points(base.geometry, base.material);
+      pp.position.set(ox * COLS, 0, oz * ROWS);
+      seaScene.add(pp);
+    }
   }
 }
+
+function makeDotTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 2, 32, 32, 30);
+  grad.addColorStop(0, 'rgba(255,240,180,1)');
+  grad.addColorStop(0.4, 'rgba(255,217,77,0.9)');
+  grad.addColorStop(1, 'rgba(255,217,77,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+const markerTex = makeDotTexture();
 
 // towns (blue) and ruins (purple) get their own markers, visible everywhere
 function makeMarkers(list, color) {
@@ -350,18 +393,7 @@ for (const pts of [townPoints, ruinPoints]) {
   }
 }
 
-function makeDotTexture() {
-  const c = document.createElement('canvas');
-  c.width = c.height = 64;
-  const g = c.getContext('2d');
-  const grad = g.createRadialGradient(32, 32, 2, 32, 32, 30);
-  grad.addColorStop(0, 'rgba(255,240,180,1)');
-  grad.addColorStop(0.4, 'rgba(255,217,77,0.9)');
-  grad.addColorStop(1, 'rgba(255,217,77,0)');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 64, 64);
-  return new THREE.CanvasTexture(c);
-}
+
 
 // ---------------------------------------------------------------------------
 // Port scene (built on demand when entering a port)
