@@ -173,10 +173,23 @@ export function generateWorldMap(rnd, COLS, ROWS, seaId, landIds) {
     }
   }
 
-  // ocean connectivity: flood fill from (0,0); unreachable water becomes land
+  // ocean connectivity: flood fill from every WATER tile on the map edge.
+  // (starting in a random inland lake would seal the MAIN ocean instead!)
   const reach = new Uint8Array(COLS * ROWS);
-  const q = [[0, 0]];
-  reach[0] = 1;
+  const q = [];
+  const seedAt = (x, z) => {
+    const i = wrapI(x, z);
+    if (data[i] === seaId && !reach[i]) { reach[i] = 1; q.push([x, z]); }
+  };
+  const wrapI = (x, z) => ((z % ROWS + ROWS) % ROWS) * COLS + ((x % COLS + COLS) % COLS);
+  for (let x = 0; x < COLS; x++) { seedAt(x, 0); seedAt(x, ROWS - 1); }
+  for (let z = 0; z < ROWS; z++) { seedAt(0, z); seedAt(COLS - 1, z); }
+  // edges might be all ice: fall back to the first water tile anywhere
+  if (!q.length) {
+    for (let i = 0; i < data.length; i++) {
+      if (data[i] === seaId) { reach[i] = 1; q.push([i % COLS, Math.floor(i / COLS)]); break; }
+    }
+  }
   while (q.length) {
     const [x, z] = q.pop();
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {

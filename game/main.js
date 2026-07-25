@@ -1503,7 +1503,7 @@ if (randoSummary) {
       P.fleet = [{ ship: randoSummary.startShip, hull: shipByName(randoSummary.startShip).hull }];
     }
   }
-  P.randoSeed = randoSummary.seed;
+  P.randoSeed = randoSeedStr;
 }
 // migrate saves from the 3-tier ship system
 if (P.shipTier !== undefined) {
