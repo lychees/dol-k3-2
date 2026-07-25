@@ -397,6 +397,17 @@ the uw2ol project, which took them from the original Uncharted Waters 2
 - Port wanderers are now 6 random distinct pack characters with proper
   4-direction walk animation (idle col 0, walk cols 1/2), replacing the
   two uw2ol man/woman sprites; static door NPCs unchanged.
+### 29. Randomizer 模式（参考 UWNHRando）
+- New `game/randomizer.js`: seeded (FNV hash + mulberry32) deterministic
+  randomization, applied at boot from a stored seed.
+- Options (checkboxes on the start screen):
+  markets (8-12 random goods per region with buy<sell and full coverage),
+  specialties (random per port, never duplicating home market),
+  start ship (random small ship), port development (100-600),
+  port locations (relocate ports to random accessible coasts),
+  discovery locations (relocate to random land tiles).
+- Start overlay has a "Randomizer mode" panel with a seed input; the same
+  seed produces the same world (verified), shown in the dev console.
 ## Key file formats (cheat sheet)
 
 | Data | Format |

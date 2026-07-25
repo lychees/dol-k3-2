@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { applyRandomizer } from './randomizer.js';
 
 // ---------------------------------------------------------------------------
 // Constants (from uw2ol: code/common/constants.py)
@@ -83,6 +84,45 @@ const sailableAt = (x, z) => {
   if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return false;
   return SAILABLE.has(tileAt(c, r));
 };
+
+// --- randomizer (UWNHRando-style): applied at boot when a seed is stored ----
+const isLandTile = (x, z) => {
+  const c = Math.floor(x), r = Math.floor(z);
+  return c >= 0 && r >= 0 && c < COLS && r < ROWS && !SAILABLE.has(tileAt(c, r));
+};
+const snapCoast = rnd => {
+  for (let t = 0; t < 400; t++) {
+    const x = Math.floor(rnd() * COLS), z = Math.floor(rnd() * ROWS);
+    if (isLandTile(x, z) && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => !isLandTile(x + dx, z + dz))) {
+      return [x, z];
+    }
+  }
+  return [840, 358];
+};
+const snapLand = rnd => {
+  for (let t = 0; t < 400; t++) {
+    const x = Math.floor(rnd() * COLS), z = Math.floor(rnd() * ROWS);
+    if (isLandTile(x, z)) return [x, z];
+  }
+  return [840, 358];
+};
+
+const RANDO_KEY = 'uw-rando';
+let randoSummary = null;
+const randoPortDev = {};
+try {
+  const ro = JSON.parse(localStorage.getItem(RANDO_KEY));
+  if (ro && ro.seed) {
+    randoSummary = applyRandomizer(
+      { seed: ro.seed, markets: ro.markets ?? true, specialties: ro.specialties ?? true,
+        startShip: ro.startShip ?? true, portDev: ro.portDev ?? true,
+        portLocations: ro.portLocations ?? false, discoveries: ro.discoveries ?? false },
+      { goodsData, villages, ports, portMeta,
+        portRegion: pid => (portMeta[pid] ?? portMeta[Math.min(pid, 101)])?.region,
+        portDev: randoPortDev, snapCoast, snapLand,
+        ships: Object.entries(shipData).map(([name, a]) => ({ name, ...a })) });
+  }
+} catch (e) { console.warn('randomizer failed', e); }
 
 // ---------------------------------------------------------------------------
 // Tilemap shader (shared by world map and port maps)
@@ -1401,6 +1441,16 @@ try {
   const s = JSON.parse(localStorage.getItem(SAVE_KEY));
   if (s && typeof s === 'object') P = { ...P, ...s };
 } catch { /* fresh game */ }
+// randomizer injections for a fresh randomized game
+if (randoSummary) {
+  if (!localStorage.getItem(SAVE_KEY)) {
+    if (randoSummary.portDev) P.portDev = { ...randoPortDev };
+    if (randoSummary.startShip) {
+      P.fleet = [{ ship: randoSummary.startShip, hull: shipByName(randoSummary.startShip).hull }];
+    }
+  }
+  P.randoSeed = randoSummary.seed;
+}
 // migrate saves from the 3-tier ship system
 if (P.shipTier !== undefined) {
   P.ship = ['Sloop', 'Caravela Redonda', 'Galleon'][P.shipTier] ?? 'Balsa';
@@ -3205,7 +3255,8 @@ function refreshDevPanel() {
   document.getElementById('dev-gold').value = P.gold;
   document.getElementById('dev-speed').value = P.devSpeed ?? curShip().speed;
   document.getElementById('dev-status').textContent =
-    `flagship: ${curShip().name} · fleet: ${P.fleet.length}/5 · speed override: ${P.devSpeed ?? 'off'}`;
+    `flagship: ${curShip().name} · fleet: ${P.fleet.length}/5 · speed override: ${P.devSpeed ?? 'off'}` +
+    (P.randoSeed ? ` · seed: ${P.randoSeed}` : '');
   // tabs
   const tabs = document.getElementById('dev-tabs');
   tabs.innerHTML = '';
@@ -3523,6 +3574,23 @@ document.getElementById('ruin-leave').onclick = () => ruinFlee();
 document.getElementById('lb-attack').onclick = () => landBattleTurn('attack');
 document.getElementById('lb-balm').onclick = () => landBattleTurn('balm');
 document.getElementById('lb-run').onclick = () => landBattleTurn('run');
+
+document.getElementById('rando-start').addEventListener('click', e => {
+  e.stopPropagation();
+  const seed = document.getElementById('rando-seed').value.trim() ||
+               String(Math.floor(Math.random() * 1e9));
+  localStorage.setItem(RANDO_KEY, JSON.stringify({
+    seed,
+    markets: document.getElementById('ro-markets').checked,
+    specialties: document.getElementById('ro-specialties').checked,
+    startShip: document.getElementById('ro-startship').checked,
+    portDev: document.getElementById('ro-portdev').checked,
+    portLocations: document.getElementById('ro-portloc').checked,
+    discoveries: document.getElementById('ro-disc').checked,
+  }));
+  localStorage.removeItem(SAVE_KEY);
+  location.reload();
+});
 
 document.getElementById('start-overlay').addEventListener('click', function (e) {
   if (e.target.closest('#char-select') || started) return;   // picking a hero / already started

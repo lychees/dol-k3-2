@@ -94,6 +94,11 @@
                    box-shadow: 0 0 10px rgba(255,217,77,.5); }
   #char-select { margin: 10px 0 4px; }
   #char-name { color: #ffd94d; font-size: 17px; margin-top: 4px; }
+  #rando-box { margin-top: 14px; font-size: 14px; color: #cbb;
+               background: rgba(0,0,0,.45); border: 1px solid #8a6d3b;
+               border-radius: 8px; padding: 10px 18px; max-width: 480px; }
+  #rando-opts { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px;
+                justify-content: center; }
 
   #battle-hud { position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
                 z-index: 6; display: none; text-align: center; color: #fff;
@@ -325,11 +330,31 @@
   <div id="char-select"></div>
   <div id="char-name"></div>
   <div class="go">⚓ Click to set sail ⚓</div>
+  <div id="rando-box">
+    <details>
+      <summary style="cursor:pointer;color:#ffd94d">🎲 Randomizer mode (UWNHRando-style)</summary>
+      <div style="margin-top:8px">
+        seed: <input id="rando-seed" placeholder="leave empty for random"
+          style="width:180px;background:#1a1a1a;color:#ffe9a8;border:1px solid #8a6d3b;border-radius:4px;padding:4px 8px">
+      </div>
+      <div id="rando-opts">
+        <label><input type="checkbox" id="ro-markets" checked> markets</label>
+        <label><input type="checkbox" id="ro-specialties" checked> specialties</label>
+        <label><input type="checkbox" id="ro-startship" checked> start ship</label>
+        <label><input type="checkbox" id="ro-portdev" checked> development</label>
+        <label><input type="checkbox" id="ro-portloc"> port locations</label>
+        <label><input type="checkbox" id="ro-disc"> discoveries</label>
+      </div>
+      <div id="rando-start" style="margin-top:8px;color:#fff;cursor:pointer;text-decoration:underline">
+        Start randomized new game
+      </div>
+    </details>
+  </div>
 </div>
 
 <script type="importmap">
   { "imports": { "three": "./lib/three.module.js" } }
 </script>
-<script type="module" src="./main.js?v=20260804"></script>
+<script type="module" src="./main.js?v=20260805"></script>
 </body>
 </html>
