@@ -236,7 +236,18 @@ const seaScene = new THREE.Scene();
 seaScene.background = new THREE.Color(0x020a14);
 
 const world = makeTilemapMesh(mapData, COLS, ROWS, phaseTex.day, phaseTex.day);
-seaScene.add(world.mesh);
+// toroidal world: render the map as a 3x3 grid of copies so edges connect
+// seamlessly (meshes share one material; three.js frustum-culls the rest)
+for (let ox = -1; ox <= 1; ox++) {
+  for (let oz = -1; oz <= 1; oz++) {
+    if (ox === 0 && oz === 0) { seaScene.add(world.mesh); continue; }
+    const copy = new THREE.Mesh(world.mesh.geometry, world.mesh.material);
+    copy.rotation.copy(world.mesh.rotation);
+    copy.position.set(world.mesh.position.x + ox * COLS, 0,
+                      world.mesh.position.z + oz * ROWS);
+    seaScene.add(copy);
+  }
+}
 
 // --- ship: flat quad just above the map, UV window into the sprite sheet ---
 // Sprite sheet: 8 cols x 4 rows of 32px; row 1 (from top) = player ship.
@@ -272,6 +283,14 @@ const portPoints = new THREE.Points(portGeo, new THREE.PointsMaterial({
   color: 0xffd94d, sizeAttenuation: true,
 }));
 seaScene.add(portPoints);
+for (let ox = -1; ox <= 1; ox++) {
+  for (let oz = -1; oz <= 1; oz++) {
+    if (ox === 0 && oz === 0) continue;
+    const pp = new THREE.Points(portGeo, portPoints.material);
+    pp.position.set(ox * COLS, 0, oz * ROWS);
+    seaScene.add(pp);
+  }
+}
 
 // towns (blue) and ruins (purple) get their own markers, visible everywhere
 function makeMarkers(list, color) {
@@ -286,8 +305,17 @@ function makeMarkers(list, color) {
 }
 const townPoints = makeMarkers(towns, 0x60a5fa);
 const ruinPoints = makeMarkers(ruins, 0xc084fc);
-seaScene.add(townPoints);
-seaScene.add(ruinPoints);
+for (const pts of [townPoints, ruinPoints]) {
+  seaScene.add(pts);
+  for (let ox = -1; ox <= 1; ox++) {
+    for (let oz = -1; oz <= 1; oz++) {
+      if (ox === 0 && oz === 0) continue;
+      const pp = new THREE.Points(pts.geometry, pts.material);
+      pp.position.set(ox * COLS, 0, oz * ROWS);
+      seaScene.add(pp);
+    }
+  }
+}
 
 function makeDotTexture() {
   const c = document.createElement('canvas');
