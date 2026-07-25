@@ -421,6 +421,15 @@ the uw2ol project, which took them from the original Uncharted Waters 2
 - snapCoast/snapLand now sample from precomputed coast/land tile lists
   (one 2.3M-tile scan at boot) — random sampling missed coasts 99.4% of
   the time on noise-generated maps and silently fell back to (840,358).
+### 31. 环形地图 + 种子显示 + 默认全随机
+- The world is now a torus: ships wrap around both the west/east seam and
+  the north/south seam (`wrapX/wrapZ`; tileAt wraps all coordinate reads).
+  Randomized maps generate wrap-aware value noise (edge-matched sampling)
+  and wrap-aware ocean flood-fill, so coastlines continue seamlessly
+  across the seam. The original map keeps its geography (Siberia and
+  polar ice naturally block the seam there).
+- Randomizer mode shows `seed: <n>` at the bottom-right (above the minimap).
+- All randomizer options are now checked by default.
 ## Key file formats (cheat sheet)
 
 | Data | Format |

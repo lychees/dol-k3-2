@@ -78,18 +78,14 @@ function loadTex(url, filter = true) {
   }, undefined, rej));
 }
 
-const tileAt = (col, row) => mapData[row * COLS + col];
-const sailableAt = (x, z) => {
-  const c = Math.floor(x), r = Math.floor(z);
-  if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return false;
-  return SAILABLE.has(tileAt(c, r));
-};
+// the world is a torus: edges wrap west<->east and north<->south
+const wrapX = x => ((x % COLS) + COLS) % COLS;
+const wrapZ = z => ((z % ROWS) + ROWS) % ROWS;
+const tileAt = (col, row) => mapData[wrapZ(row) * COLS + wrapX(col)];
+const sailableAt = (x, z) => SAILABLE.has(tileAt(Math.floor(x), Math.floor(z)));
 
 // --- randomizer (UWNHRando-style): applied at boot when a seed is stored ----
-const isLandTile = (x, z) => {
-  const c = Math.floor(x), r = Math.floor(z);
-  return c >= 0 && r >= 0 && c < COLS && r < ROWS && !SAILABLE.has(tileAt(c, r));
-};
+const isLandTile = (x, z) => !SAILABLE.has(tileAt(Math.floor(x), Math.floor(z)));
 // precomputed land/coast tile lists (coast = land with a SAILABLE neighbor)
 let landList = [], coastList = [];
 function buildGeoLists() {
@@ -3478,6 +3474,15 @@ function toggleMusic() {
 // ---------------------------------------------------------------------------
 // HUD
 // ---------------------------------------------------------------------------
+const seedTag = document.createElement('div');
+seedTag.className = 'hud';
+seedTag.id = 'seed-tag';
+if (P.randoSeed) seedTag.textContent = `seed: ${P.randoSeed}`;
+document.body.appendChild(seedTag);
+
+// ---------------------------------------------------------------------------
+// HUD
+// ---------------------------------------------------------------------------
 const hudTop = document.getElementById('hud-top');
 const hudRight = document.getElementById('hud-right');
 const banner = document.getElementById('banner');
@@ -3691,8 +3696,8 @@ function tick() {
               : dz > 0 ? (dx < 0 ? 'sw' : dx > 0 ? 'se' : 'down')
               : dx < 0 ? 'left' : 'right';
     }
-    shipPos.x = THREE.MathUtils.clamp(shipPos.x, 2, COLS - 3);
-    shipPos.z = THREE.MathUtils.clamp(shipPos.z, 2, ROWS - 3);
+    shipPos.x = wrapX(shipPos.x);          // toroidal world: wrap, don't clamp
+    shipPos.z = wrapZ(shipPos.z);
     ship.position.copy(shipPos);
     updateShipSprite();
 
@@ -3815,8 +3820,8 @@ function tick() {
         }
       }
     }
-    landPos.x = THREE.MathUtils.clamp(landPos.x, 2, COLS - 3);
-    landPos.z = THREE.MathUtils.clamp(landPos.z, 2, ROWS - 3);
+    landPos.x = wrapX(landPos.x);
+    landPos.z = wrapZ(landPos.z);
     landPerson.position.copy(landPos);
     updateLandPersonSprite();
 

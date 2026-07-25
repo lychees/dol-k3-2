@@ -128,10 +128,12 @@ function valueNoise(rnd, gw, gh, cols, rows) {
   for (let i = 0; i < grid.length; i++) grid[i] = rnd();
   const s = t => t * t * (3 - 2 * t);
   return (x, z) => {
-    const gx = x / cols * (gw - 1), gz = z / rows * (gh - 1);
-    const x0 = Math.floor(gx), z0 = Math.floor(gz);
-    const x1 = Math.min(x0 + 1, gw - 1), z1 = Math.min(z0 + 1, gh - 1);
-    const fx = s(gx - x0), fz = s(gz - z0);
+    // wrap-aware sampling: the map is a torus (edges connect)
+    const gx = x / cols * gw, gz = z / rows * gh;
+    const x0 = Math.floor(gx) % gw, z0 = Math.floor(gz) % gh;
+    const x1 = (x0 + 1) % gw, z1 = (z0 + 1) % gh;
+    const fx0 = gx - Math.floor(gx), fz0 = gz - Math.floor(gz);
+    const fx = s(fx0), fz = s(fz0);
     const v00 = grid[z0 * gw + x0], v10 = grid[z0 * gw + x1];
     const v01 = grid[z1 * gw + x0], v11 = grid[z1 * gw + x1];
     return v00 + (v10 - v00) * fx + (v01 - v00) * fz + (v00 - v10 - v01 + v11) * fx * fz;
@@ -147,9 +149,7 @@ export function generateWorldMap(rnd, COLS, ROWS, seaId, landIds) {
   for (let z = 0; z < ROWS; z++) {
     for (let x = 0; x < COLS; x++) {
       const i = z * COLS + x;
-      // suppress land near the poles, like the original
-      const polar = z < ROWS * 0.06 || z > ROWS * 0.94 ? 0.15 : 0;
-      val[i] = 0.55 * n1(x, z) + 0.3 * n2(x, z) + 0.15 * n3(x, z) - polar;
+      val[i] = 0.55 * n1(x, z) + 0.3 * n2(x, z) + 0.15 * n3(x, z);
     }
   }
   const sorted = Float32Array.from(val).sort();
@@ -169,8 +169,7 @@ export function generateWorldMap(rnd, COLS, ROWS, seaId, landIds) {
   while (q.length) {
     const [x, z] = q.pop();
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const nx = x + dx, nz = z + dz;
-      if (nx < 0 || nz < 0 || nx >= COLS || nz >= ROWS) continue;
+      const nx = (x + dx + COLS) % COLS, nz = (z + dz + ROWS) % ROWS;
       const ni = nz * COLS + nx;
       if (!reach[ni] && data[ni] === seaId) { reach[ni] = 1; q.push([nx, nz]); }
     }
