@@ -10,6 +10,7 @@ const TILESET_COLS = 16;      // tiles per row in the tileset image
 const TILESET_ROWS = 8;
 const SAILABLE = new Set(Array.from({ length: 32 }, (_, i) => i + 1)); // ids 1..32
 const DAY_LENGTH_SEC = 180;   // one full in-game day
+const SAIL_DAY_SCALE = 10;    // time flows this much faster under sail (voyages cost days)
 const PORT_SIZE = 96;         // port maps are 96x96 tiles
 const PORT_WALK_MAX = 39;     // walkable port tile ids: 1..39
 const PORT_WALK_MAX_ASIA = 46;
@@ -3777,6 +3778,7 @@ document.getElementById('gameover-newgame').onclick = () => {
 // debug hook
 window.UW = {
   setTime: t => { gameTime = t; },
+  getGameTime: () => gameTime,
   shipPos, personPos, landPos,
   setZoom: d => { camDist = d; },
   enterPort: id => enterPort(id),
@@ -3923,9 +3925,27 @@ function tick() {
   requestAnimationFrame(tick);
   const dt = Math.min(clock.getDelta(), 0.1);
 
-  // --- day/night cycle (shared) ---
+  // --- movement input (read first: sailing speeds up the calendar) ---
+  let dx = 0, dz = 0;
+  const panelOpen = discoveryPanel.style.display === 'block' || inBuilding || anyPanelOpen() || !!landBattle || townOpen || !!ruin || !!bj || !!pk;
+  if (started && !gameover && !panelOpen) {
+    if (keys['w'] || keys['arrowup']) dz -= 1;
+    if (keys['s'] || keys['arrowdown']) dz += 1;
+    if (keys['a'] || keys['arrowleft']) dx -= 1;
+    if (keys['d'] || keys['arrowright']) dx += 1;
+  }
+  const moving = dx !== 0 || dz !== 0;
+  if (moving) {
+    const len = Math.hypot(dx, dz);
+    dx /= len; dz /= len;
+    animTimer += dt;
+    if (animTimer > 0.35) { animTimer = 0; animFrame ^= 1; }
+  }
+
+  // --- day/night cycle: time runs faster while sailing (voyages cost days) ---
+  const sailing = scene === 'sea' && moving;
   const prevGameTime = gameTime;
-  gameTime = (gameTime + dt) % DAY_LENGTH_SEC;
+  gameTime = (gameTime + dt * (sailing ? SAIL_DAY_SCALE : 1)) % DAY_LENGTH_SEC;
   if (started && !gameover && gameTime < prevGameTime) onNewDay();   // day wrapped
   const t = gameTime / DAY_LENGTH_SEC;            // 0..1
   const seg = Math.floor(t * 4);                  // current phase
@@ -3942,23 +3962,6 @@ function tick() {
     portWorld.uniforms.tilesA.value = portWorld.chips[a];
     portWorld.uniforms.tilesB.value = portWorld.chips[b];
     portWorld.uniforms.blend.value = blend;
-  }
-
-  // --- movement input ---
-  let dx = 0, dz = 0;
-  const panelOpen = discoveryPanel.style.display === 'block' || inBuilding || anyPanelOpen() || !!landBattle || townOpen || !!ruin || !!bj || !!pk;
-  if (started && !gameover && !panelOpen) {
-    if (keys['w'] || keys['arrowup']) dz -= 1;
-    if (keys['s'] || keys['arrowdown']) dz += 1;
-    if (keys['a'] || keys['arrowleft']) dx -= 1;
-    if (keys['d'] || keys['arrowright']) dx += 1;
-  }
-  const moving = dx !== 0 || dz !== 0;
-  if (moving) {
-    const len = Math.hypot(dx, dz);
-    dx /= len; dz /= len;
-    animTimer += dt;
-    if (animTimer > 0.35) { animTimer = 0; animFrame ^= 1; }
   }
 
   if (scene === 'sea') {
