@@ -1924,12 +1924,23 @@ function onNewDay() {
     }
   }
   if (scene === 'sea') {
-    P.provisions = Math.max(0, P.provisions - 8 * boatswainFactor());
-    P.fatigue = Math.min(100, P.fatigue + 12 * (P.equipment.figurehead ? 0.5 : 1) * surgeonFactor() * chapelFactor());
+    // water & rations: more mouths to feed -> faster drain
+    const drain = (4 + P.crew * 0.25) * boatswainFactor();
+    P.provisions = Math.max(0, P.provisions - drain);
+    const starving = P.provisions <= 0;
+    // a starving crew tires far faster
+    P.fatigue = Math.min(100, P.fatigue + 12 * (starving ? 3 : 1)
+                 * (P.equipment.figurehead ? 0.5 : 1) * surgeonFactor() * chapelFactor());
     flag().hull = Math.max(0, flag().hull - 1);
-    if (P.provisions <= 0) {
-      flag().hull = Math.max(0, flag().hull - 5);
-      showBanner('Out of provisions!<small>the crew is starving — find a port</small>');
+    if (starving) {
+      showBanner('Out of water and rations!<small>the crew is starving — fatigue soars; find a port</small>');
+    }
+    if (P.fatigue >= 100) {
+      // exhaustion kills: 10% of the crew per day at full fatigue
+      const dead = Math.max(1, Math.ceil(P.crew * 0.1));
+      P.crew = Math.max(0, P.crew - dead);
+      if (P.crew <= 0) { gameOver('exhaustion'); return; }
+      showBanner(`${dead} sailors died of exhaustion!<small>lower fatigue — rest at an inn, lime juice, chapel</small>`);
     }
   }
   save();
@@ -3026,7 +3037,7 @@ function boardingMelee(byPlayer) {
     showBanner(`Boarding victory!<small>their crew is finished (${eStart} → 0); you lost ${pStart - P.crew} sailors</small>`);
     captureEnemy();
   } else if (P.crew <= 0) {
-    shipwreck('massacre');
+    gameOver('massacre');
   } else {
     // stalemate: both sides disengage and cannot re-board for a while
     battle.boardLock = 6;
@@ -3101,6 +3112,19 @@ function sailableNear(bx, by) {
     }
   }
   return [bx, by];
+}
+
+function gameOver(reason) {
+  endBattle();
+  ruin = null; landBattle = null;
+  const texts = {
+    exhaustion: 'With no water or rations, exhaustion swept the fleet. Every last sailor perished at sea — and your voyage ends here, adrift on an empty ocean.',
+    massacre:   'Your crew was wiped out to the last sailor. With no hands left at the oars, your voyage ends here.',
+  };
+  document.getElementById('gameover-text').textContent = texts[reason] ?? reason;
+  document.getElementById('gameover-overlay').style.display = 'flex';
+  gameover = true;
+  save();
 }
 
 function shipwreck(reason = 'battle') {
@@ -3244,7 +3268,7 @@ function updateBattle(dt) {
         // crew casualties are gentler on the player (else 2 volleys wipe a small crew)
         P.crew = Math.max(0, P.crew - Math.max(1, Math.round(b.dmg * (P.equipment.armor ? 0.75 : 1) * 0.1)));
         if (flag().hull <= 0) shipwreck('battle');
-        else if (P.crew <= 0) shipwreck('massacre');
+        else if (P.crew <= 0) gameOver('massacre');
       }
     }
     if (remove) {
@@ -3388,6 +3412,7 @@ function drawMinimap() {
 // ---------------------------------------------------------------------------
 const keys = {};
 addEventListener('keydown', e => {
+  if (gameover) return;             // voyage is over — only the overlay matters
   // typing in dev panel inputs: let Esc/` through (they close panels),
   // swallow only printable characters so they don't trigger hotkeys
   if (e.target.tagName === 'INPUT' && e.key.length === 1 && e.key !== '`') return;
@@ -3743,6 +3768,11 @@ const clock = new THREE.Clock();
 let gameTime = DAY_LENGTH_SEC * 0.3;   // start mid-morning
 let currentPhase = 'day';
 let started = false;
+let gameover = false;
+document.getElementById('gameover-newgame').onclick = () => {
+  localStorage.removeItem(SAVE_KEY);
+  location.reload();
+};
 
 // debug hook
 window.UW = {
@@ -3774,6 +3804,9 @@ window.UW = {
   getNpcs: () => ({ wanderers: npcs.length, static: staticNpcs.length }),
   mapProbe: (x, z) => ({ tile: tileAt(Math.floor(x), Math.floor(z)),
                          sailable: sailableAt(x, z), land: isLandTile(x, z) }),
+  newDay: () => onNewDay(),
+  gameOver,
+  isGameOver: () => gameover,
   getData: () => ({ ports, villages, towns, ruins }),
   debugNpcDir: dir => {
     const n = npcs[0];
@@ -3893,7 +3926,7 @@ function tick() {
   // --- day/night cycle (shared) ---
   const prevGameTime = gameTime;
   gameTime = (gameTime + dt) % DAY_LENGTH_SEC;
-  if (started && gameTime < prevGameTime) onNewDay();   // day wrapped
+  if (started && !gameover && gameTime < prevGameTime) onNewDay();   // day wrapped
   const t = gameTime / DAY_LENGTH_SEC;            // 0..1
   const seg = Math.floor(t * 4);                  // current phase
   const segT = t * 4 - seg;
@@ -3914,7 +3947,7 @@ function tick() {
   // --- movement input ---
   let dx = 0, dz = 0;
   const panelOpen = discoveryPanel.style.display === 'block' || inBuilding || anyPanelOpen() || !!landBattle || townOpen || !!ruin || !!bj || !!pk;
-  if (started && !panelOpen) {
+  if (started && !gameover && !panelOpen) {
     if (keys['w'] || keys['arrowup']) dz -= 1;
     if (keys['s'] || keys['arrowdown']) dz += 1;
     if (keys['a'] || keys['arrowleft']) dx -= 1;
@@ -3979,7 +4012,7 @@ function tick() {
              : null);
 
     // --- pirates & battle ---
-    if (started && !panelOpen) {
+    if (started && !gameover && !panelOpen) {
       updatePirates(dt);
       // bounty target lurks near its posted area
       const q = P.jobQuest;

@@ -156,6 +156,17 @@
                           line-height: 1.9; text-align: center; }
   #start-overlay .go { margin-top: 16px; font-size: 22px; color: #fff;
                        animation: pulse 1.4s infinite; }
+  #gameover-overlay { position: fixed; inset: 0; z-index: 20; display: none;
+                      background: radial-gradient(ellipse at center, #3d0d0d 0%, #140202 100%);
+                      flex-direction: column; align-items: center; justify-content: center;
+                      color: #ffe9a8; text-align: center; padding: 16px; }
+  #gameover-overlay h1 { font-size: 48px; margin: 0 0 12px; letter-spacing: 4px;
+                         color: #ff6b4d; text-shadow: 2px 2px 8px #000; }
+  #gameover-overlay p { font-size: 17px; line-height: 1.8; margin: 0 0 24px; max-width: 520px; }
+  #gameover-overlay button { font-size: 18px; padding: 10px 26px; cursor: pointer;
+                             background: #1a1a1a; color: #ffe9a8;
+                             border: 1px solid #8a6d3b; border-radius: 6px; }
+  #gameover-overlay button:hover { background: #2a2a2a; }
   @keyframes pulse { 50% { opacity: .35; } }
   .key { display: inline-block; border: 1px solid #8a6d3b; border-radius: 4px;
          padding: 0 7px; margin: 0 2px; background: #1a1a1a; color: #fff;
@@ -396,9 +407,15 @@
   </div>
 </div>
 
+<div id="gameover-overlay">
+  <h1>GAME OVER</h1>
+  <p id="gameover-text"></p>
+  <button id="gameover-newgame">⚓ Start a new voyage</button>
+</div>
+
 <script type="importmap">
   { "imports": { "three": "./lib/three.module.js" } }
 </script>
-<script type="module" src="./main.js?v=20260829"></script>
+<script type="module" src="./main.js?v=20260830"></script>
 </body>
 </html>
