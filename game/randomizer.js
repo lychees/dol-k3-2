@@ -162,6 +162,17 @@ export function generateWorldMap(rnd, COLS, ROWS, seaId, landIds) {
       data[i] = t < 0.7 ? landIds[0] : t < 0.95 ? landIds[1] : landIds[2];
     }
   }
+  // polar ice caps (north & south bands, like the original's arctic scenery)
+  const POLAR = 0.045;
+  for (let z = 0; z < ROWS; z++) {
+    if (Math.min(z, ROWS - 1 - z) >= ROWS * POLAR) continue;
+    for (let x = 0; x < COLS; x++) {
+      const i = z * COLS + x;
+      // jagged icy cap: mostly snow land, with a few water channels
+      data[i] = n4(x, z) > 0.18 ? 82 : seaId;
+    }
+  }
+
   // ocean connectivity: flood fill from (0,0); unreachable water becomes land
   const reach = new Uint8Array(COLS * ROWS);
   const q = [[0, 0]];
