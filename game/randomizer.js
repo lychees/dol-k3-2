@@ -140,12 +140,15 @@ function valueNoise(rnd, gw, gh, cols, rows) {
   };
 }
 
-export function generateWorldMap(rnd, COLS, ROWS, seaId, landIds) {
-  const n1 = valueNoise(rnd, 10, 6, COLS, ROWS);
-  const n2 = valueNoise(rnd, 24, 12, COLS, ROWS);
-  const n3 = valueNoise(rnd, 60, 30, COLS, ROWS);
+export function generateWorldMap(rnd, COLS, ROWS, seaId, landIds, opts = {}) {
+  // continent scale: bigger base grid -> smaller, islander continents
+  const gw = opts.continents === 'small' ? 18 : opts.continents === 'medium' ? 12 : 8;
+  const gh = Math.round(gw * 0.6);
+  const n1 = valueNoise(rnd, gw, gh, COLS, ROWS);
+  const n2 = valueNoise(rnd, gw * 3, gh * 3, COLS, ROWS);
+  const n3 = valueNoise(rnd, gw * 8, gh * 8, COLS, ROWS);
   const val = new Float32Array(COLS * ROWS);
-  const LAND_PCT = 0.16 + rnd() * 0.08;      // 16-24% land
+  const LAND_PCT = opts.landPct ?? (0.16 + rnd() * 0.08);
   for (let z = 0; z < ROWS; z++) {
     for (let x = 0; x < COLS; x++) {
       const i = z * COLS + x;
@@ -156,7 +159,7 @@ export function generateWorldMap(rnd, COLS, ROWS, seaId, landIds) {
   const thr = sorted[Math.floor((1 - LAND_PCT) * sorted.length)];
   const data = new Uint8Array(COLS * ROWS).fill(seaId);
   const n4 = valueNoise(rnd, 40, 20, COLS, ROWS);
-  const POLAR = 0.045;
+  const POLAR = opts.polar === false ? 0 : 0.045;
   for (let i = 0; i < data.length; i++) {
     if (val[i] >= thr) {
       const z = (i / COLS) | 0;
@@ -165,7 +168,7 @@ export function generateWorldMap(rnd, COLS, ROWS, seaId, landIds) {
         continue;
       }
       const t = n4((i % COLS), z);
-      data[i] = t < 0.7 ? landIds[0] : t < 0.95 ? landIds[1] : landIds[2];
+      data[i] = t < 0.7 ? landIds[0] : (t < 0.95 || POLAR === 0) ? landIds[1] : landIds[2];
     }
   }
   // ocean connectivity: flood fill from every WATER tile on the map edge.
@@ -223,7 +226,7 @@ export function generateWorldMap(rnd, COLS, ROWS, seaId, landIds) {
   const MOUNT = [53, 54, 55, 56, 61, 62];
   const at2 = (x, z) => data[((z + ROWS) % ROWS) * COLS + ((x + COLS) % COLS)];
   const setAt = (x, z, v) => { data[((z + ROWS) % ROWS) * COLS + ((x + COLS) % COLS)] = v; };
-  const nRivers = 8 + Math.floor(rnd() * 8);
+  const nRivers = opts.riverCount ?? (8 + Math.floor(rnd() * 8));
   if (typeof window !== 'undefined') window.__riverLog = { planned: nRivers, started: 0, carved: 0 };
   for (let r = 0; r < nRivers; r++) {
     // start on a water tile next to land, walk inland
@@ -254,7 +257,7 @@ export function generateWorldMap(rnd, COLS, ROWS, seaId, landIds) {
   }
 
   // mountains: random clusters on land (hills, peaks, volcanoes)
-  const nMount = 15 + Math.floor(rnd() * 10);
+  const nMount = opts.mountCount ?? (15 + Math.floor(rnd() * 10));
   for (let m = 0; m < nMount; m++) {
     let x = -1, z = -1;
     for (let t = 0; t < 200; t++) {
@@ -285,12 +288,13 @@ export function generateWorldMap(rnd, COLS, ROWS, seaId, landIds) {
   };
   // shore tiles are color-matched to the adjacent land (grass/sand/snow)
   const SNOW_SHORE = new Set([18, 20, 22, 23, 24, 25]);
+  if (opts.coastSmoothing === false) return { data, sealedLakes: sealed };
   const shoreClass = t => t >= 26 ? 'sand' : SNOW_SHORE.has(t) ? 'snow' : 'grass';
   const landClass = t => t === 82 ? 'snow' : t === 90 ? 'sand' : 'grass';
   // snapshot first: converting in place would cascade "land neighbor" across
   // the whole ocean (shore tiles are not seaId and look like land)
   const pre = Uint8Array.from(data);
-  const POLAR_BAND = 0.045;
+  const POLAR_BAND = POLAR;
   for (let z = 0; z < ROWS; z++) {
     for (let x = 0; x < COLS; x++) {
       const i = z * COLS + x;

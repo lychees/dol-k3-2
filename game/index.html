@@ -100,8 +100,10 @@
   #rando-box { margin-top: 14px; font-size: 14px; color: #cbb;
                background: rgba(0,0,0,.45); border: 1px solid #8a6d3b;
                border-radius: 8px; padding: 10px 18px; max-width: 480px; }
-  #rando-opts { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px;
+  #rando-opts, #rando-geo { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px;
                 justify-content: center; }
+  #rando-geo select { background: #1a1a1a; color: #ffe9a8; border: 1px solid #8a6d3b;
+                border-radius: 4px; padding: 2px 6px; }
 
   #battle-hud { position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
                 z-index: 6; display: none; text-align: center; color: #fff;
@@ -351,6 +353,39 @@
         <label><input type="checkbox" id="ro-mapstruct" checked> <b>map structure</b></label>
         <label><input type="checkbox" id="ro-disc" checked> discoveries</label>
       </div>
+      <div id="rando-geo">
+        <label>land % <select id="ro-landpct">
+          <option value="0.12">12%</option>
+          <option value="0.18" selected>18%</option>
+          <option value="0.24">24%</option>
+          <option value="0.32">32%</option>
+        </select></label>
+        <label>continents <select id="ro-cont">
+          <option value="large" selected>large</option>
+          <option value="medium">medium</option>
+          <option value="small">small / islands</option>
+        </select></label>
+        <label>rivers <select id="ro-rivers">
+          <option value="0">none</option>
+          <option value="8">few</option>
+          <option value="16" selected>normal</option>
+          <option value="32">many</option>
+        </select></label>
+        <label>mountains <select id="ro-mount">
+          <option value="0">none</option>
+          <option value="10">few</option>
+          <option value="22" selected>normal</option>
+          <option value="45">many</option>
+        </select></label>
+        <label><input type="checkbox" id="ro-polar" checked> polar scenery</label>
+        <label><input type="checkbox" id="ro-coast" checked> smooth coasts</label>
+        <label>pirates <select id="ro-pirates">
+          <option value="0">none</option>
+          <option value="60">few</option>
+          <option value="25" selected>normal</option>
+          <option value="10">many</option>
+        </select></label>
+      </div>
       <div id="rando-start" style="margin-top:8px;color:#fff;cursor:pointer;text-decoration:underline">
         Start randomized new game
       </div>
@@ -364,6 +399,6 @@
 <script type="importmap">
   { "imports": { "three": "./lib/three.module.js" } }
 </script>
-<script type="module" src="./main.js?v=20260825"></script>
+<script type="module" src="./main.js?v=20260826"></script>
 </body>
 </html>

@@ -156,7 +156,10 @@ try {
     if (ro.mapStructure) {
       // generate a brand new world map (UWNHRando's flagship feature)
       const { data, sealedLakes } = generateWorldMap(
-        mulberry32(hashSeed(ro.seed) ^ 0x9e3779b9), COLS, ROWS, 1, [74, 66, 82]);
+        mulberry32(hashSeed(ro.seed) ^ 0x9e3779b9), COLS, ROWS, 1, [74, 66, 82],
+        { landPct: ro.landPct, continents: ro.continents,
+          riverCount: ro.riverCount, mountCount: ro.mountCount,
+          polar: ro.polar, coastSmoothing: ro.coastSmoothing });
       mapData = data;
       randoSummary = { seed: ro.seed, mapStructure: true, sealedLakes };
     }
@@ -1584,6 +1587,7 @@ let P = {
   telescope: false, discoveryQuest: null, deliveryQuest: null,
   palaceMilestone: 0, days: 0, discoveries: [], portsFound: [],
   portDev: {},                        // portId -> {dev, mine}
+  pirateRate: 25,                     // auto-spawn interval (0 = none)
   devSpeed: null,                 // developer-mode ship speed override
 };
 try {
@@ -1600,6 +1604,10 @@ if (randoSummary?.mapStructure) {
 if (randoSummary) {
   if (!localStorage.getItem(SAVE_KEY)) {
     if (randoSummary.portDev) P.portDev = { ...randoPortDev };
+    try {
+      const ro2 = JSON.parse(localStorage.getItem(RANDO_KEY));
+      if (ro2 && ro2.pirateRate !== undefined) P.pirateRate = ro2.pirateRate;
+    } catch {}
     if (randoSummary.startShip) {
       P.fleet = [{ ship: randoSummary.startShip, hull: shipByName(randoSummary.startShip).hull }];
     }
@@ -2837,6 +2845,8 @@ const PIRATE_SHIPS = ['Brigantine', 'Nao', 'Galleon', 'Carrack'];
 let pirates = [];             // overworld NPC ships hunting the player
 let battle = null;            // {enemy, balls, cd}
 let pirateTimer = 30;         // seconds until next spawn check
+const pirateInterval = () =>
+  P.pirateRate === 0 ? Infinity : (P.pirateRate ?? 25);
 let noAutoSpawn = false;      // test hook: disable random pirate spawns
 
 const ballGeo = new THREE.PlaneGeometry(0.5, 0.5);
@@ -3049,7 +3059,7 @@ function updatePirates(dt) {
   // spawn new pirates over time
   pirateTimer -= dt;
   if (pirateTimer <= 0 && !noAutoSpawn) {
-    pirateTimer = 25 + Math.random() * 20;
+    pirateTimer = pirateInterval() * (0.8 + Math.random() * 0.4);
     if (pirates.length < 2 && Math.random() < 0.6) {
       for (let tries = 0; tries < 12; tries++) {
         const ang = Math.random() * Math.PI * 2;
@@ -3770,6 +3780,13 @@ document.getElementById('rando-start').addEventListener('click', e => {
     portLocations: document.getElementById('ro-portloc').checked,
     discoveries: document.getElementById('ro-disc').checked,
     mapStructure: document.getElementById('ro-mapstruct').checked,
+    landPct: +document.getElementById('ro-landpct').value,
+    continents: document.getElementById('ro-cont').value,
+    riverCount: +document.getElementById('ro-rivers').value,
+    mountCount: +document.getElementById('ro-mount').value,
+    polar: document.getElementById('ro-polar').checked,
+    coastSmoothing: document.getElementById('ro-coast').checked,
+    pirateRate: +document.getElementById('ro-pirates').value,
   }));
   localStorage.removeItem(SAVE_KEY);
   location.reload();
