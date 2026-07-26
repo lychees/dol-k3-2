@@ -122,6 +122,18 @@ const distT = (ax, az, bx, bz) => {
   const dx = Math.abs(ax - bx), dz = Math.abs(az - bz);
   return Math.hypot(Math.min(dx, COLS - dx), Math.min(dz, ROWS - dz));
 };
+// nearest item of `list` within maxD tiles of (x, z), wrap-aware;
+// getZ handles lists whose second coordinate is stored as `y` (ports, villages)
+function nearestOf(list, x, z, maxD, getZ = it => it.z) {
+  let best = null, bestD = maxD;
+  for (const it of list) {
+    const d = distT(it.x, getZ(it), x, z);
+    if (d < bestD) { best = it; bestD = d; }
+  }
+  return best;
+}
+// plain 2D distance from the ship to a map point (no wrap — used for local checks)
+const shipDist2D = (x, z) => Math.hypot(x - shipPos.x, z - shipPos.z);
 
 // --- randomizer (UWNHRando-style): applied at boot when a seed is stored ----
 const isLandTile = (x, z) => !SAILABLE.has(tileAt(Math.floor(x), Math.floor(z)));
@@ -265,11 +277,9 @@ function makeSprite(tex, repX, repY, size = 2) {
   mesh.rotation.x = -Math.PI / 2;
   return mesh;
 }
-// direction frame helpers (sprite sheets share the up/right/down/left layout)
+// direction frame helper (sprite sheets share the up/right/down/left layout)
 const shipFrame = (map, dir, frame, row) =>
   map.offset.set((DIRECTION_COL[dir] + frame) / 8, (3 - row) / 4);
-const personFrame = (map, dir, frame, block) =>
-  map.offset.set((block + DIRECTION_COL[dir] + frame) / 32, 0);
 
 // ---------------------------------------------------------------------------
 // Sea scene
@@ -365,7 +375,8 @@ const portPoints = makePortPoints(cityPorts, portIconTex);
 const supplyPoints = makePortPoints(supplyPorts, supplyIconTex);
 seaScene.add(portPoints);
 seaScene.add(supplyPoints);
-for (const base of [portPoints, supplyPoints, villagePoints]) {
+// toroidal world: every marker cloud gets 8 wrap-around copies so edges connect
+function addWrapCopies(base) {
   for (let ox = -1; ox <= 1; ox++) {
     for (let oz = -1; oz <= 1; oz++) {
       if (ox === 0 && oz === 0) continue;
@@ -375,6 +386,7 @@ for (const base of [portPoints, supplyPoints, villagePoints]) {
     }
   }
 }
+for (const base of [portPoints, supplyPoints, villagePoints]) addWrapCopies(base);
 
 function makeDotTexture() {
   const c = document.createElement('canvas');
@@ -405,14 +417,7 @@ const townPoints = makeMarkers(towns, 0x60a5fa);
 const ruinPoints = makeMarkers(ruins, 0xc084fc);
 for (const pts of [townPoints, ruinPoints]) {
   seaScene.add(pts);
-  for (let ox = -1; ox <= 1; ox++) {
-    for (let oz = -1; oz <= 1; oz++) {
-      if (ox === 0 && oz === 0) continue;
-      const pp = new THREE.Points(pts.geometry, pts.material);
-      pp.position.set(ox * COLS, 0, oz * ROWS);
-      seaScene.add(pp);
-    }
-  }
+  addWrapCopies(pts);
 }
 
 
@@ -574,10 +579,7 @@ function exitPortToLand() {
   hideBuildingPanel();
   camDist = 16;
   if (portReturnPos) landPos.set(portReturnPos.x, 0.4, portReturnPos.z);
-  landDir = 'down';
-  landPerson.visible = true;
-  landPerson.position.copy(landPos);
-  updateLandPersonSprite();
+  showLandPerson();
   showBanner('Back to the wilds<small>return to your ship and press L to re-board</small>');
 }
 
@@ -605,21 +607,31 @@ function closePanel(name) {
   if (p.building && inBuilding) buildingPanel.style.display = 'block';
 }
 const anyPanelOpen = () => Object.values(PANELS).some(p => p.open);
+const SUB_PANELS = ['market', 'shipyard', 'mates', 'outfit'];
+// close the first open panel from `names`; returns true if something was closed
+const closeFirstOpen = names => {
+  for (const n of names) {
+    if (PANELS[n].open) { closePanel(n); return true; }
+  }
+  return false;
+};
 function closeBuildingSubPanels() {
-  for (const n of ['market', 'shipyard', 'mates', 'outfit']) closePanel(n);
+  for (const n of SUB_PANELS) closePanel(n);
 }
-function closeBuildingSubPanelOpen() {
-  for (const n of ['market', 'shipyard', 'mates', 'outfit']) {
-    if (PANELS[n].open) { closePanel(n); return true; }
+const closeBuildingSubPanelOpen = () => closeFirstOpen(SUB_PANELS);
+// close the topmost closable panel; returns true if something was closed
+const closeTopPanel = () => closeFirstOpen(['dialog', 'menu', 'dev', ...SUB_PANELS]);
+
+// render a row of tab buttons; onPick(id) switches the tab and re-renders
+function mkTabs(container, tabs, current, onPick) {
+  container.innerHTML = '';
+  for (const [id, label] of tabs) {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.className = id === current ? 'active' : '';
+    b.onclick = () => onPick(id);
+    container.appendChild(b);
   }
-  return false;
-}
-function closeTopPanel() {
-  // close the topmost closable panel; returns true if something was closed
-  for (const n of ['dialog', 'menu', 'dev', 'market', 'shipyard', 'mates', 'outfit']) {
-    if (PANELS[n].open) { closePanel(n); return true; }
-  }
-  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -778,11 +790,7 @@ function renderPoker() {
   document.getElementById('pk-msg').textContent = pk.msg;
   const acts = document.getElementById('pk-actions');
   acts.innerHTML = '';
-  const mk = (label, fn, disabled = false) => {
-    const b = document.createElement('button');
-    b.textContent = label; b.disabled = disabled; b.onclick = fn;
-    acts.appendChild(b);
-  };
+  const mk = (label, fn, disabled = false) => mkBtn(acts, label, fn, disabled);
   if (pk.state === 'act') {
     mk('Fold', () => pkAction('fold'));
     mk(pk.toCall > 0 ? `Call ${pk.toCall}g` : 'Check', () => pkAction('call'), P.gold < pk.toCall);
@@ -837,11 +845,7 @@ function renderBj() {
   document.getElementById('bj-msg').textContent = bj.msg;
   const acts = document.getElementById('bj-actions');
   acts.innerHTML = '';
-  const mk = (label, fn, disabled = false) => {
-    const b = document.createElement('button');
-    b.textContent = label; b.disabled = disabled; b.onclick = fn;
-    acts.appendChild(b);
-  };
+  const mk = (label, fn, disabled = false) => mkBtn(acts, label, fn, disabled);
   if (bj.state === 'bet') {
     for (const amt of [50, 100, 500]) {
       mk(`Bet ${amt}g`, () => bjDeal(amt), P.gold < amt);
@@ -1188,6 +1192,15 @@ let landBattle = null;    // {enemy, log[], round}
 let encounterT = 2;       // seconds of walking before next possible encounter
 
 const heroMaxHp = () => 20 + 8 * P.hero.lv;
+// apply pending hero level-ups from stored exp; log each one to `logArr`
+function heroLevelUps(logArr) {
+  while (P.hero.exp >= P.hero.lv * 20) {
+    P.hero.exp -= P.hero.lv * 20;
+    P.hero.lv++;
+    P.hero.hp = heroMaxHp();
+    logArr.push(`Level up! ${CHARACTER_NAMES[P.character]} is now lv ${P.hero.lv}!`);
+  }
+}
 const heroAtk = () => Math.max(1, Math.round((4 + 2 * P.hero.lv + [0, 4, 8, 14][P.hero.weapon]) * (P.fatigue >= 90 ? 0.75 : 1)));
 const heroDef = () => Math.floor(P.hero.lv / 2) + [0, 2, 5, 9][P.hero.armor];
 const mateMaxHp = id => 15 + 5 * (matesData[id]?.lv ?? 1);
@@ -1200,6 +1213,14 @@ function landAt(x, z) {   // walkable for a person: land tiles (not sailable wat
   return !SAILABLE.has(tileAt(Math.floor(x), Math.floor(z)));
 }
 
+// place the on-foot sprite at landPos, facing down
+function showLandPerson() {
+  landDir = 'down';
+  landPerson.visible = true;
+  landPerson.position.copy(landPos);
+  updateLandPersonSprite();
+}
+
 function landOn() {
   // find an adjacent land tile to step onto
   for (const [ox, oz] of [[0, -1], [0, 1], [-1, 0], [1, 0], [-1, -1], [1, -1], [-1, 1], [1, 1]]) {
@@ -1209,10 +1230,7 @@ function landOn() {
       scene = 'land';
       landExpedition = true;
       camDist = 16;
-      landDir = 'down';
-      landPerson.visible = true;
-      landPerson.position.copy(landPos);
-      updateLandPersonSprite();
+      showLandPerson();
       endBattle();   // pirates can't follow you ashore
       showBanner('Gone ashore<small>explore on foot — beware of wild beasts! Return to your ship and press L to re-board</small>');
       return true;
@@ -1333,12 +1351,7 @@ function endLandBattle(won) {
     P.hero.exp += bt.enemy.exp;
     const cb = bt.onEnd;
     // level ups
-    while (P.hero.exp >= P.hero.lv * 20) {
-      P.hero.exp -= P.hero.lv * 20;
-      P.hero.lv++;
-      P.hero.hp = heroMaxHp();
-      bt.log.push(`Level up! ${CHARACTER_NAMES[P.character]} is now lv ${P.hero.lv}!`);
-    }
+    heroLevelUps(bt.log);
     P.fame += 1;
     bt.over = true;
     save();
@@ -1407,41 +1420,19 @@ const ruinPanel = document.getElementById('ruin-panel');
 let townOpen = false, ruin = null;
 
 function nearestTown() {
-  if (scene !== 'land') return null;
-  let best = null, bestD = 4;
-  for (const t of towns) {
-    const d = distT(t.x, t.z, landPos.x, landPos.z);
-    if (d < bestD) { best = t; bestD = d; }
-  }
-  return best;
+  return scene === 'land' ? nearestOf(towns, landPos.x, landPos.z, 4) : null;
 }
 
 function nearestSeaTown() {
-  let best = null, bestD = 4;
-  for (const t of towns) {
-    const d = distT(t.x, t.z, shipPos.x, shipPos.z);
-    if (d < bestD) { best = t; bestD = d; }
-  }
-  return best;
+  return nearestOf(towns, shipPos.x, shipPos.z, 4);
 }
 
 function nearestSeaRuin() {
-  let best = null, bestD = 4;
-  for (const r of ruins) {
-    const d = distT(r.x, r.z, shipPos.x, shipPos.z);
-    if (d < bestD) { best = r; bestD = d; }
-  }
-  return best;
+  return nearestOf(ruins, shipPos.x, shipPos.z, 4);
 }
 
 function nearestRuin() {
-  if (scene !== 'land') return null;
-  let best = null, bestD = 4;
-  for (const r of ruins) {
-    const d = distT(r.x, r.z, landPos.x, landPos.z);
-    if (d < bestD) { best = r; bestD = d; }
-  }
-  return best;
+  return scene === 'land' ? nearestOf(ruins, landPos.x, landPos.z, 4) : null;
 }
 
 function openTown(t) {
@@ -1451,11 +1442,7 @@ function openTown(t) {
     `A quiet inland town. Merchants and travelers rest here.`;
   const acts = document.getElementById('town-actions');
   acts.innerHTML = '';
-  const mk = (label, fn, disabled = false) => {
-    const b = document.createElement('button');
-    b.textContent = label; b.disabled = disabled; b.onclick = fn;
-    acts.appendChild(b);
-  };
+  const mk = (label, fn, disabled = false) => mkBtn(acts, label, fn, disabled);
   mk('Rest at the inn (10g)', () => {
     if (P.gold < 10) return;
     P.gold -= 10;
@@ -1579,12 +1566,7 @@ function ruinTreasure() {
   const exp = 15 + P.hero.lv * 5;
   P.gold += g;
   P.hero.exp += exp;
-  while (P.hero.exp >= P.hero.lv * 20) {
-    P.hero.exp -= P.hero.lv * 20;
-    P.hero.lv++;
-    P.hero.hp = heroMaxHp();
-    ruin.log.push(`Level up! ${CHARACTER_NAMES[P.character]} is now lv ${P.hero.lv}!`);
-  }
+  heroLevelUps(ruin.log);
   P.fame += 2;
   P.ruinCd = P.ruinCd ?? {};
   P.ruinCd[r.id] = P.days;
@@ -1814,6 +1796,14 @@ function bestInCabins(type, skill) {
   return best;
 }
 
+// grant skill xp to every mate posted in a cabin of `type`
+function xpInCabins(type, skill, xp) {
+  for (const [idStr, key] of Object.entries(P.shipCabins)) {
+    const [i, j] = key.split(':').map(Number);
+    if (P.fleet[i] && cabinsOf(i)[j] === type) gainSkillXp(+idStr, skill, xp);
+  }
+}
+
 const navBonus = () => 1 + bestInCabins('navigation', 'navigation') * 0.012
                         + bestInCabins('deck', 'steering') * 0.005;
 const accBonus = () => 1 + bestInCabins('accounting', 'accounting') * 0.02;
@@ -1977,6 +1967,13 @@ const BUILDING_FLAVOR = {
 // --- building action helpers -------------------------------------------------
 let pendingHire = null;   // mate id being chatted up in the bar
 function setBuildingText(t) { buildingText.innerHTML = t; }
+
+// append one menu button (label, onclick, disabled) to a container
+function mkBtn(container, label, fn, disabled = false) {
+  const b = document.createElement('button');
+  b.textContent = label; b.disabled = disabled; b.onclick = fn;
+  container.appendChild(b);
+}
 
 function renderActions(menu) {
   buildingActions.innerHTML = '';
@@ -2473,10 +2470,7 @@ function renderMarket(msg = '') {
     save(); renderMarket(`Bought ${n} ${r.name} (-${r.buy * n}g)`);
   };
   const sellN = (r, n) => {
-    for (const [idStr, key] of Object.entries(P.shipCabins)) {
-      const [i, j] = key.split(':').map(Number);
-      if (P.fleet[i] && cabinsOf(i)[j] === 'accounting') gainSkillXp(+idStr, 'accounting', 1);
-    }
+    xpInCabins('accounting', 'accounting', 1);
     const hold = P.cargo[r.name];
     n = Math.min(n, hold);
     const revenue = Math.ceil(r.sell * accBonus()) * n;
@@ -2902,20 +2896,9 @@ const MENU_RENDER = {
   },
 };
 
-function renderMenu() {
-  const tabs = document.getElementById('menu-tabs');
-  tabs.innerHTML = '';
-  for (const [id, label] of MENU_TABS) {
-    const b = document.createElement('button');
-    b.textContent = label;
-    b.className = id === menuTab ? 'active' : '';
-    b.onclick = () => { menuTab = id; renderMenu(); };
-    tabs.appendChild(b);
-  }
-  const div = document.getElementById('menu-content');
-  div.innerHTML = MENU_RENDER[menuTab]();
-  // draw discovery thumbnails (49px cells from the discoveries sheet)
-  div.querySelectorAll('.disc-thumb').forEach(cv => {
+// draw 49px discovery-sheet thumbnails into every .disc-thumb canvas under `root`
+function drawDiscThumbs(root) {
+  root.querySelectorAll('.disc-thumb').forEach(cv => {
     const [ix, iy] = cv.dataset.img.split(',').map(Number);
     const g = cv.getContext('2d');
     g.imageSmoothingEnabled = false;
@@ -2923,9 +2906,17 @@ function renderMenu() {
   });
 }
 
+function renderMenu() {
+  const tabs = document.getElementById('menu-tabs');
+  mkTabs(tabs, MENU_TABS, menuTab, id => { menuTab = id; renderMenu(); });
+  const div = document.getElementById('menu-content');
+  div.innerHTML = MENU_RENDER[menuTab]();
+  // draw discovery thumbnails (49px cells from the discoveries sheet)
+  drawDiscThumbs(div);
+}
+
 definePanel('menu', menuPanel, { render: renderMenu });
 const toggleMenu = () => PANELS.menu.open ? closePanel('menu') : openPanel('menu');
-const closeMenu = () => closePanel('menu');
 
 // ---------------------------------------------------------------------------
 // Naval battles: pirates hunt at sea; SPACE fires a broadside
@@ -3060,10 +3051,7 @@ function tryBoard() {
 
 function fireCannon() {
   if (!battle || battle.cd > 0 || !started || scene !== 'sea') return;
-  for (const [idStr, key] of Object.entries(P.shipCabins)) {
-    const [i, j] = key.split(':').map(Number);
-    if (P.fleet[i] && cabinsOf(i)[j] === 'gunnery') gainSkillXp(+idStr, 'gunnery', 2);
-  }
+  xpInCabins('gunnery', 'gunnery', 2);
   if (shipPos.distanceTo(battle.enemy.pos) > 10) return;
   battle.cd = 2;
   fireBall(shipPos, battle.enemy.pos, battleDmg(), true);
@@ -3096,10 +3084,7 @@ function markBountyDone(p) {
 
 function sinkEnemy() {
   const p = battle.enemy;
-  for (const [idStr, key] of Object.entries(P.shipCabins)) {
-    const [i, j] = key.split(':').map(Number);
-    if (P.fleet[i] && cabinsOf(i)[j] === 'captain') gainSkillXp(+idStr, 'leadership', 5);
-  }
+  xpInCabins('captain', 'leadership', 5);
   markBountyDone(p);
   removePirate(p);
   const loot = Math.floor((150 + Math.random() * 400 + p.ship.price / 100) * (P.equipment.figurehead ? 1.25 : 1));
@@ -3303,10 +3288,7 @@ function nearestVillage() {
 
 function goAshore(v) {
   discoveriesFound.add(v.id);
-  for (const [idStr, key] of Object.entries(P.shipCabins)) {
-    const [i, j] = key.split(':').map(Number);
-    if (P.fleet[i] && cabinsOf(i)[j] === 'lookout') gainSkillXp(+idStr, 'lookout', 10);
-  }
+  xpInCabins('lookout', 'lookout', 10);
   P.fame += 1;
   save();
   playSfx('./assets/sounds/discover.ogg');
@@ -3345,18 +3327,14 @@ function buildWorldMinimap() {
     }
   }
   g.putImageData(img, 0, 0);
-  g.fillStyle = '#ffd94d';                       // ports in gold
-  for (const p of ports) {
-    g.fillRect(p.x / COLS * mm.width - 1, p.y / ROWS * mm.height - 1, 2, 2);
-  }
-  g.fillStyle = '#60a5fa';                       // towns in blue
-  for (const t of towns) {
-    g.fillRect(t.x / COLS * mm.width - 1, t.z / ROWS * mm.height - 1, 2, 2);
-  }
-  g.fillStyle = '#c084fc';                       // ruins in purple
-  for (const r of ruins) {
-    g.fillRect(r.x / COLS * mm.width - 1, r.z / ROWS * mm.height - 1, 2, 2);
-  }
+  // ports in gold, towns in blue, ruins in purple
+  const plot = (list, color, getZ = it => it.z) => {
+    g.fillStyle = color;
+    for (const it of list) g.fillRect(it.x / COLS * mm.width - 1, getZ(it) / ROWS * mm.height - 1, 2, 2);
+  };
+  plot(ports, '#ffd94d', p => p.y);
+  plot(towns, '#60a5fa');
+  plot(ruins, '#c084fc');
 }
 buildWorldMinimap();
 
@@ -3474,7 +3452,7 @@ function onUseKey() {
   if (scene === 'sea') {
     const q = P.jobQuest;
     if (q?.type === 'treasure' && !q.done && !battle &&
-        Math.hypot(q.x - shipPos.x, q.z - shipPos.z) < 3) {
+        shipDist2D(q.x, q.z) < 3) {
       digTreasure(q);
       return;
     }
@@ -3489,14 +3467,7 @@ function onUseKey() {
   } else if (buildingNear) {
     openBuilding(buildingNear);
   } else if (scene === 'land') {
-    const np = (() => {
-      let best = null, bestD = 4;
-      for (const p of ports) {
-        const d = distT(p.x, p.y, landPos.x, landPos.z);
-        if (d < bestD) { best = p; bestD = d; }
-      }
-      return best;
-    })();
+    const np = nearestOf(ports, landPos.x, landPos.z, 4, p => p.y);
     const t = nearestTown();
     const ru = nearestRuin();
     if (np) enterPort(np.id);
@@ -3542,14 +3513,7 @@ function refreshDevPanel() {
     (P.randoSeed ? ` · seed: ${P.randoSeed}` : '') + (mdMode ? ' · MD palette' : '');
   // tabs
   const tabs = document.getElementById('dev-tabs');
-  tabs.innerHTML = '';
-  for (const [id, label] of DEV_TABS) {
-    const b = document.createElement('button');
-    b.textContent = label;
-    b.className = id === devTab ? 'active' : '';
-    b.onclick = () => { devTab = id; refreshDevPanel(); };
-    tabs.appendChild(b);
-  }
+  mkTabs(tabs, DEV_TABS, devTab, id => { devTab = id; refreshDevPanel(); });
   const cheats = document.getElementById('dev-cheats');
   const content = document.getElementById('dev-content');
   if (devTab === 'cheats') {
@@ -3561,12 +3525,7 @@ function refreshDevPanel() {
   content.style.display = 'block';
   content.innerHTML = DEV_RENDER[devTab]();
   // draw discovery/monster thumbnails
-  content.querySelectorAll('.disc-thumb').forEach(cv => {
-    const [ix, iy] = cv.dataset.img.split(',').map(Number);
-    const g = cv.getContext('2d');
-    g.imageSmoothingEnabled = false;
-    g.drawImage(discoveryImg, (ix - 1) * 49, (iy - 1) * 49, 49, 49, 0, 0, 49, 49);
-  });
+  drawDiscThumbs(content);
   // teleport wiring: prefix filter + go (double-click a port to jump instantly)
   const tpSel = document.getElementById('dev-tp-port');
   if (tpSel) tpSel.ondblclick = () => document.getElementById('dev-tp-go').click();
@@ -3730,9 +3689,7 @@ function toggleMusic() {
   if (musicOn) audio.play().catch(() => {}); else audio.pause();
 }
 
-// ---------------------------------------------------------------------------
-// HUD
-// ---------------------------------------------------------------------------
+// --- rando seed tag (HUD corner, shown when a seed is active) ---
 const seedTag = document.createElement('div');
 seedTag.className = 'hud';
 seedTag.id = 'seed-tag';
@@ -3766,6 +3723,22 @@ function showBanner(html, ms = 3500) {
 function showHint(html) {
   if (html) { hint.innerHTML = html; hint.style.opacity = 1; }
   else hint.style.opacity = 0;
+}
+
+// small inline meter bar for the HUD (frac filled, optional threshold marker)
+function hudBar(frac, color, markFrac = null) {
+  const w = 90, h = 8;
+  const mark = markFrac == null ? '' :
+    `<div style="position:absolute;left:${Math.min(100, markFrac * 100)}%;top:-2px;width:2px;height:${h + 4}px;background:#ffd94d"></div>`;
+  return `<div style="display:inline-block;position:relative;width:${w}px;height:${h}px;` +
+         `background:#222;border:1px solid #8a6d3b;vertical-align:middle;margin:0 4px">` +
+         `<div style="width:${Math.min(100, Math.max(0, frac * 100))}%;height:100%;background:${color}"></div>${mark}</div>`;
+}
+
+// chase camera: hover above and behind `pos` at the current zoom
+function camFollow(pos) {
+  camera.position.set(pos.x, camDist * Math.cos(CAM_TILT), pos.z + camDist * Math.sin(CAM_TILT));
+  camera.lookAt(pos.x, 0, pos.z);
 }
 
 // ---------------------------------------------------------------------------
@@ -3993,15 +3966,14 @@ function tick() {
     ship.position.copy(shipPos);
     updateShipSprite();
 
-    camera.position.set(shipPos.x, camDist * Math.cos(CAM_TILT), shipPos.z + camDist * Math.sin(CAM_TILT));
-    camera.lookAt(shipPos.x, 0, shipPos.z);
+    camFollow(shipPos);
 
     // --- treasure quest: guardian spawns at the site ---
     {
       const q = P.jobQuest;
       if (q?.type === 'treasure' && q.guarded && !q.done && !battle &&
           !pirates.some(p => p.bountyName === 'treasure guard') &&
-          Math.hypot(q.x - shipPos.x, q.z - shipPos.z) < 15) {
+          shipDist2D(q.x, q.z) < 15) {
         spawnPirate(q.x + 1, q.z + 1, PIRATE_SHIPS[Math.floor(Math.random() * PIRATE_SHIPS.length)],
                     'treasure guard');
       }
@@ -4012,7 +3984,7 @@ function tick() {
     const v = p || battle ? null : nearestVillage();
     const tq = P.jobQuest;
     const nearTreasure = !battle && tq?.type === 'treasure' && !tq.done &&
-                         Math.hypot(tq.x - shipPos.x, tq.z - shipPos.z) < 3;
+                         shipDist2D(tq.x, tq.z) < 3;
     const tn = battle ? null : nearestSeaTown();
     const rn = battle || tn ? null : nearestSeaRuin();
     showHint(nearTreasure ? `<span class="key">E</span> dig for treasure!`
@@ -4030,7 +4002,7 @@ function tick() {
       // bounty target lurks near its posted area
       const q = P.jobQuest;
       if (q?.type === 'bounty' && !q.done && !pirates.some(p => p.bountyName === q.name) &&
-          Math.hypot(q.x - shipPos.x, q.z - shipPos.z) < 40) {
+          shipDist2D(q.x, q.z) < 40) {
         spawnPirate(q.x + 2, q.z + 2, q.ship, q.name);
       }
     }
@@ -4039,14 +4011,6 @@ function tick() {
     // --- HUD ---
     const dailyDrain = (4 + P.crew * 0.25) * boatswainFactor();
     const daysLeft = P.provisions > 0 ? Math.floor(P.provisions / dailyDrain) : 0;
-    const bar = (frac, color, markFrac = null) => {
-      const w = 90, h = 8;
-      const mark = markFrac == null ? '' :
-        `<div style="position:absolute;left:${Math.min(100, markFrac * 100)}%;top:-2px;width:2px;height:${h + 4}px;background:#ffd94d"></div>`;
-      return `<div style="display:inline-block;position:relative;width:${w}px;height:${h}px;` +
-             `background:#222;border:1px solid #8a6d3b;vertical-align:middle;margin:0 4px">` +
-             `<div style="width:${Math.min(100, Math.max(0, frac * 100))}%;height:100%;background:${color}"></div>${mark}</div>`;
-    };
     const minC = fleetMinCrew(), maxC = fleetMaxCrew();
     const crewLow = P.crew < minC;
     const crewTxt = crewLow ? `<span style="color:#ff5b4d;font-weight:bold">${P.crew}</span>` : `${P.crew}`;
@@ -4054,8 +4018,8 @@ function tick() {
       `<b>${fmtLonLat(shipPos.x, shipPos.z)}</b> · day ${P.days}<br>` +
       `time: ${a} · speed: ${moving ? (curSpeed * 1.8).toFixed(1) : '0.0'} kn · gold: ${P.gold}g · hull: ${Math.ceil(flag().hull)}<br>` +
       `food: ${Math.floor(P.provisions)} (${daysLeft}d)${daysLeft <= 2 ? ' <span style="color:#ff5b4d">⚠</span>' : ''}<br>` +
-      `fatigue${bar(P.fatigue / 100, P.fatigue >= 90 ? '#ff5b4d' : P.fatigue >= 60 ? '#e6a23c' : '#5b8cff')} ${Math.floor(P.fatigue)}<br>` +
-      `crew${bar(P.crew / maxC, crewLow ? '#ff5b4d' : '#5bff8c', minC / maxC)} ${crewTxt}/${maxC}`;
+      `fatigue${hudBar(P.fatigue / 100, P.fatigue >= 90 ? '#ff5b4d' : P.fatigue >= 60 ? '#e6a23c' : '#5b8cff')} ${Math.floor(P.fatigue)}<br>` +
+      `crew${hudBar(P.crew / maxC, crewLow ? '#ff5b4d' : '#5bff8c', minC / maxC)} ${crewTxt}/${maxC}`;
   } else if (scene === 'port') {
     // --- walk in port ---
     if (moving) {
@@ -4073,8 +4037,7 @@ function tick() {
     updatePersonSprite();
     updateNpcs(dt, a);
 
-    camera.position.set(personPos.x, camDist * Math.cos(CAM_TILT), personPos.z + camDist * Math.sin(CAM_TILT));
-    camera.lookAt(personPos.x, 0, personPos.z);
+    camFollow(personPos);
 
     // --- standing next to a building? (building tiles are unwalkable;
     //     the player stops in front of the door, like in uw2ol) ---
@@ -4137,18 +4100,10 @@ function tick() {
     landPerson.position.copy(landPos);
     updateLandPersonSprite();
 
-    camera.position.set(landPos.x, camDist * Math.cos(CAM_TILT), landPos.z + camDist * Math.sin(CAM_TILT));
-    camera.lookAt(landPos.x, 0, landPos.z);
+    camFollow(landPos);
 
     const nearShip = distT(landPos.x, landPos.z, shipPos.x, shipPos.z) <= 2.5;
-    const nearPortLand = (() => {
-      let best = null, bestD = 4;
-      for (const p of ports) {
-        const d = distT(p.x, p.y, landPos.x, landPos.z);
-        if (d < bestD) { best = p; bestD = d; }
-      }
-      return best;
-    })();
+    const nearPortLand = nearestOf(ports, landPos.x, landPos.z, 4, p => p.y);
     const t = nearestTown(), ru = nearestRuin();
     showHint(landBattle || townOpen || ruin ? null
              : nearPortLand ? `<span class="key">E</span> enter ${nearPortLand.name}`
