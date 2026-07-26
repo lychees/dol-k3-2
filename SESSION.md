@@ -463,3 +463,15 @@ the uw2ol project, which took them from the original Uncharted Waters 2
 - 详见 assets_dos/README.md。
   音乐：收录 botxp 手工 MIDI 21 首（music/midi/），fluidsynth + TimGM6mb.sf2
   渲染为 ogg/mp3 各 21 首（3 个非 ASCII 文件名需先复制为临时名再渲染）。
+
+## 2026-07-26 DOS 版 UI 素材（方案 B：DOSBox 截图）
+
+- GRAPH.DAT（65 块 UI 图形）为光荣私有压缩格式，两个参考 repo 均未覆盖，
+  系统尝试 NPK/PackBits/nibble-RLE/gamma-LZW/VGA-planar/位平面等数十种组合均未破解。
+  块结构已确认：u32be 偏移表 → 宽(u16le)+高(u16le)+8色12-bit调色板(20字节头) + 压缩像素。
+- 改用方案 B：DOSBox-X 运行游戏截图。打通环境（koei.com 启动、PostMessage 扫描码
+  模拟按键、PowerShell 窗口截图、Ctrl+F10 鼠标捕获）。
+- 捕获 10 张 UI 界面到 assets_dos/ui/：标题×2、片头帆船、角色介绍、主菜单、
+  角色选择、属性面板、命名键盘、里斯本港口、舰队菜单。
+- 建筑内景（GRAPH.DAT 块 6-22, 136x112）未能截取：DOSBox 鼠标捕获后 Windows/游戏
+  光标偏移且漂移，精确导航不可靠；菜单卡死。留待逆向 GRAPH.DAT 压缩格式解决。

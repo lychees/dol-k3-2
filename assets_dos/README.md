@@ -29,6 +29,19 @@
 | `characters/` | 7 张主角行走帧横排（char0–5 各 8 帧 32×32，char6 为 24 帧） | CHAR.LZW（7 分片） | portraits-items-discoveries/char.py |
 | `wind_current/` | 夏季风、冬季风、洋流可视化图 | WINDCUR.DAT | draw_winds_current_anomalies.py |
 | `music/` | 21 首曲目：`midi/`（原始 MIDI）+ `ogg/` + `mp3/`（fluidsynth + TimGM6mb.sf2 渲染） | 见下「音乐」 | — |
+| `ui/` | 10 张 UI 界面截图（标题×2、片头帆船、角色介绍、主菜单、角色选择、属性面板、命名键盘、里斯本港口、舰队菜单） | DOSBox-X 运行游戏截图 | 见下「UI 素材」 |
+
+## UI 素材（ui/）
+
+`GRAPH.DAT`（65 块 UI 图形：菜单、按钮、建筑内景、边框等）使用光荣私有的
+压缩格式，两个参考 repo 均未解析，目前尚未能程序化解码（块结构已摸清：
+u32be 偏移表 → 每块 `宽(u16le) + 高(u16le) + 8 色 12-bit 调色板` + 压缩像素，
+但压缩算法未知）。作为过渡方案，`ui/` 收录了用 DOSBox-X 运行游戏后截取
+的 UI 界面 PNG（640×400 原始分辨率，含窗口边框）。
+
+待办：逆向 `GRAPH.DAT` 压缩格式以导出干净的 UI 图块（尤其是 17 张建筑内景，
+对应块 6–22 的 136×112 图像）；`OPGRAPH.LZW`（片头 CG）与 `ENDGRP.DAT`
+（结局 CG）已解压为原始分片（`raw/`，未入库），压缩格式与 GRAPH.DAT 相同。
 
 ## 音乐
 
