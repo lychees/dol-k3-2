@@ -28,11 +28,14 @@
 | `dueling/png/` | 875 张决斗 sprite（IAP1–6 = 玩家 6 主角 × 35 组，IAE1 = NPC 35 组，每组含多帧带透明通道） | IAP1–6.LZW, IAE1.LZW（各 35 分片） | dueling/extract_iap.py, extract_iae.py |
 | `characters/` | 7 张主角行走帧横排（char0–5 各 8 帧 32×32，char6 为 24 帧） | CHAR.LZW（7 分片） | portraits-items-discoveries/char.py |
 | `wind_current/` | 夏季风、冬季风、洋流可视化图 | WINDCUR.DAT | draw_winds_current_anomalies.py |
+| `music/` | 21 首曲目：`midi/`（原始 MIDI）+ `ogg/` + `mp3/`（fluidsynth + TimGM6mb.sf2 渲染） | 见下「音乐」 | — |
 
-## 备注
+## 音乐
 
-- 音乐（SNR*.DAT/.MES, D2.MML）为 FM 音源数据，未转换；参考实现使用
-  [tieba 用户 botxp 手工制作的 MIDI](https://tieba.baidu.com/p/2753769314)。
-- OPGRAPH.LZW（16 分片，片头/结局 CG）已解压到 `raw/OPGRAPH/` 但尚未转 PNG。
+DOS 版音乐本体是 FM 音源数据（SNR*.DAT/.MES, D2.MML），无法直接转波形。
+采用与参考实现相同的方案：[tieba 用户 botxp 手工制作的 MIDI](https://tieba.baidu.com/p/2753769314)
+（21 首，存于 `music/midi/`），再用 fluidsynth + TimGM6mb.sf2（GPL, MuseScore 1.3
+附带的 GM 音色库）渲染为 `music/ogg/` 与 `music/mp3/`（各 21 首）。
+其中 8 首与参考实现 repo 中已转换的版本同名覆盖。
 - 本目录素材与 `game/assets/`（SNES 版，来自 uw2ol）是两套不同平台的素材，
   tile id 编码不同（DOS 版 world-map.bin 为 0-based）。

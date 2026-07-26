@@ -461,3 +461,5 @@ the uw2ol project, which took them from the original Uncharted Waters 2
   世界地图 3 块+合并 bin/PNG、3 种图集、101 港口地图+7 套港口图块+ports.json、
   ships.json、128 头像+道具+99 发现物、875 张决斗 sprite、7 主角行走帧、风/洋流图。
 - 详见 assets_dos/README.md。
+  音乐：收录 botxp 手工 MIDI 21 首（music/midi/），fluidsynth + TimGM6mb.sf2
+  渲染为 ogg/mp3 各 21 首（3 个非 ASCII 文件名需先复制为临时名再渲染）。
