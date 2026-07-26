@@ -449,3 +449,15 @@ the uw2ol project, which took them from the original Uncharted Waters 2
 | ship-tileset.png | 8×4 grid of 32px; row 1 = player ship |
 | person-tileset.png | 32×1 grid of 32px; up 0-1, right 2-3, down 4-5, left 6-7 |
 | discoveries.png | 49px cells, 16×8 grid (785×393) |
+
+## 2026-07-26 DOS 版素材导出
+
+- 获得光荣授权后下载 DOS 版游戏本体（Uncharted_Waters_2.zip，已 gitignore）。
+- 参考知乎《大航海时代2的逆向工程实验》提到的两个 repo：
+  JohanLi/uncharted-waters-2-research（格式解析）、tzengyuxio/kaodata（LS11 解码）。
+- `tools/extract_ls11.py`：LS10/LS11 解压器纯 Python 移植（无 bitarray 依赖），
+  解出 14 个 .LZW 全部分片到 raw/（已 gitignore）。
+- 用 research repo 脚本导出全部素材到 `assets_dos/`（24MB）：
+  世界地图 3 块+合并 bin/PNG、3 种图集、101 港口地图+7 套港口图块+ports.json、
+  ships.json、128 头像+道具+99 发现物、875 张决斗 sprite、7 主角行走帧、风/洋流图。
+- 详见 assets_dos/README.md。

@@ -5,3 +5,7 @@ __pycache__/
 server/uw_server.db*
 server/.venv/
 server/**/__pycache__/
+# DOS game body + decompressed intermediates (commercial game data)
+Uncharted_Waters_2.zip
+Uncharted_Waters_2/
+raw/
