@@ -58,6 +58,14 @@ const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, 
 let mapData = new Uint8Array(mapBuf);
 const portMaps = new Uint8Array(portMapBuf);   // 101 maps of 96*96
 
+// Isabella's companions — custom mates with waifulabs portraits (id > 50, injected)
+Object.assign(matesData, {
+  51: { name: 'Eudora', nation: 'Portugal', lv: 3, leadership: 40, seamanship: 45, knowledge: 75, intuition: 70, courage: 40, swordplay: 30, luck: 65, accounting: 20, gunnery: 10, navigation: 30, image: [1, 1], portrait: './assets/waifu/eudora.png' },
+  52: { name: 'Mita', nation: 'Portugal', lv: 2, leadership: 45, seamanship: 65, knowledge: 50, intuition: 55, courage: 50, swordplay: 45, luck: 55, accounting: 30, gunnery: 20, navigation: 65, image: [1, 1], portrait: './assets/waifu/mita.png' },
+  53: { name: 'Sophia', nation: 'Portugal', lv: 2, leadership: 40, seamanship: 50, knowledge: 65, intuition: 60, courage: 40, swordplay: 35, luck: 60, accounting: 60, gunnery: 15, navigation: 40, image: [1, 1], portrait: './assets/waifu/sophia.png' },
+  54: { name: 'Barbara', nation: 'Portugal', lv: 2, leadership: 50, seamanship: 55, knowledge: 45, intuition: 50, courage: 65, swordplay: 60, luck: 50, accounting: 25, gunnery: 40, navigation: 45, image: [1, 1], portrait: './assets/waifu/barbara.png' },
+});
+
 const phaseNames = ['dawn', 'day', 'dusk', 'night'];
 const phaseTex = {};
 await Promise.all(phaseNames.map(async n => {
@@ -440,7 +448,7 @@ let personDir = 'down';
 // the 6 UW2 protagonists from the DOS sheet (rows 0-5);
 // cols per character: up 0-1, left 2-3, down 4-5, right 6-7
 const CHARACTER_NAMES = ['João Ferrero', 'Catalina Erantzo', 'Otto Baynes',
-                         'Ernst Von Bohr', 'Pietro Conti', 'Ali Vezas'];
+                         'Ernst Von Bohr', 'Pietro Conti', 'Ali Vezas', 'Isabella'];
 
 // Main storylines — one per hero, 5 chapters each. check() = completion condition,
 // progress() = "cur/goal" text, reward = gold, text = narrative beat on completion.
@@ -541,6 +549,25 @@ const STORYLINES = [
     { name: 'Trade Magnate', goal: 'Amass 100,000 gold',
       check: () => P.gold >= 100000, progress: () => `${Math.min(P.gold, 100000)}/100000g`, reward: 10000,
       text: 'You are a magnate of trade, wealthier than sultans! The boy who struggled in Istanbul now rules the markets of the world.' } ] },
+  { title: 'The Fantasy Journey of Isabella', steps: [              // 6 Isabella
+    { name: 'The Duke\'s Commission', goal: 'Reach fame 3',
+      check: () => P.fame >= 3, progress: () => `${Math.min(P.fame, 3)}/3 fame`, reward: 1000,
+      text: 'In Lisbon, Duke Leon entrusts you with a commission and a generous sum. Your quiet days translating ancient texts in Sintra are over — the sea calls, Isabella.' },
+    { name: 'The Athens Library', goal: 'Discover Athens',
+      check: () => discovered.has(17), progress: () => discovered.has(17) ? 'found' : 'not yet', reward: 1500,
+      text: 'In the great library of Athens you decipher the way to awaken the red stone: gather spiritual power from the four most legendary sites on Earth — the Pyramids, Stonehenge, Bermuda, and Yingzhou.' },
+    { name: 'The Four Sacred Sites', goal: 'Make 4 discoveries',
+      check: () => discoveriesFound.size >= 4, progress: () => `${Math.min(discoveriesFound.size, 4)}/4`, reward: 2500,
+      text: 'Spiritual power hums within the red stone. But the Spanish fleet shadows you — they too covet Yubel\'s magic. Stay sharp, Isabella.' },
+    { name: 'The Spanish Intercept', goal: 'Sink 3 ships',
+      check: () => P.shipsSunk >= 3, progress: () => `${Math.min(P.shipsSunk, 3)}/3`, reward: 3000,
+      text: 'The Spanish fleet moves to seize you! At the brink, Yubel\'s magic flares — and in a flash of light the four of you are hurled into another world…' },
+    { name: 'The Way Home', goal: 'Make 8 discoveries',
+      check: () => discoveriesFound.size >= 8, progress: () => `${Math.min(discoveriesFound.size, 8)}/8`, reward: 4000,
+      text: 'Stranded in a strange world, you and your companions search for the way back. Every discovery brings you closer to home.' },
+    { name: 'Sending Yudora Home', goal: 'Reach fame 20',
+      check: () => P.fame >= 20, progress: () => `${Math.min(P.fame, 20)}/20 fame`, reward: 10000,
+      text: 'With the spiritual power gathered, you open the way home and see Yudora safely back to her own world. Your fantastical journey becomes legend, Isabella!' } ] },
 ];
 
 // recolored DOS hero portraits (Ali cropped from the DOS char-select screen)
@@ -551,6 +578,7 @@ const DOS_PORTRAIT = {
   3: './assets/dos/hero_hero_b2.png',   // Ernst
   4: './assets/dos/hero_hero_b3.png',   // Pietro
   5: './assets/dos/hero_ali.png',       // Ali
+  6: './assets/waifu/isabella.png',     // Isabella (waifulabs)
 };
 
 // main storyline progression: advance the current chapter when its condition is met
@@ -2011,6 +2039,11 @@ function figureUrl(x, y) {
   return url;
 }
 
+// mate portrait: custom `portrait` URL (e.g. waifulabs) if present, else figures.png cell
+function matePortraitUrl(m) {
+  return m.portrait ? m.portrait : figureUrl(...m.image);
+}
+
 // NPC dialog portrait: front-facing sprite cropped from npc_atlas.png (Jephed pack)
 const npcAtlasImg = new Image();
 npcAtlasImg.src = './assets/npc_atlas.png';
@@ -2244,7 +2277,7 @@ function buildingMenu(b) {
           menu.push({ label: `Meet ${m.name}`, action() {
             pendingHire = mateId;
             setBuildingText(
-              `<img src="${figureUrl(...m.image)}" style="width:65px;height:81px;image-rendering:pixelated"><br>` +
+              `<img src="${matePortraitUrl(m)}" style="width:65px;height:81px;image-rendering:pixelated"><br>` +
               `<b>${m.name}</b> · ${m.nation} · lv ${m.lv}<br>` +
               `leadership ${m.leadership} · seamanship ${m.seamanship} · luck ${m.luck}<br>` +
               `navigation ${m.navigation} · gunnery ${m.gunnery} · accounting ${m.accounting}<br>` +
@@ -2859,7 +2892,7 @@ function renderMates() {
     const skStr = Object.entries(sk)
       .sort((a, b) => b[1] - a[1]).slice(0, 3)
       .map(([s, l]) => `${SKILL_LABEL[s]} Lv${l}`).join(' · ');
-    card.innerHTML = `<img src="${figureUrl(...m.image)}" alt="">` +
+    card.innerHTML = `<img src="${matePortraitUrl(m)}" alt="">` +
       `<div class="mate-stats"><b>${m.name}</b> · ${m.nation} · lv ${m.lv}<br>` +
       `<span style="color:#7fd4ff">${skStr}</span><br>` +
       `lead ${m.leadership} seam ${m.seamanship} know ${m.knowledge} int ${m.intuition} ` +
@@ -2973,7 +3006,7 @@ const MENU_RENDER = {
     if (!P.mates.length) return html + '<p>No mates yet — meet them in bars.</p>';
     for (const id of P.mates) {
       const m = matesData[id];
-      html += `<div class="mate-card"><img src="${figureUrl(...m.image)}" alt="">` +
+      html += `<div class="mate-card"><img src="${matePortraitUrl(m)}" alt="">` +
         `<div class="mate-stats"><b>${m.name}</b> · ${m.nation} · lv ${m.lv}<br>` +
         `lead ${m.leadership} seam ${m.seamanship} know ${m.knowledge} int ${m.intuition} ` +
         `cour ${m.courage} sword ${m.swordplay} luck ${m.luck}<br>` +
@@ -3754,7 +3787,7 @@ const DEV_RENDER = {
     for (const [id, m] of Object.entries(matesData)) {
       const home = ports.find(p => p.id === id * 2);
       const hired = P.mates.includes(+id);
-      html += `<div class="mate-card"><img src="${figureUrl(...m.image)}" alt="">` +
+      html += `<div class="mate-card"><img src="${matePortraitUrl(m)}" alt="">` +
         `<div class="mate-stats"><b>${m.name}</b>${hired ? ' ★' : ''} · ${m.nation} · lv ${m.lv} · ` +
         `${home ? home.name : '?'}<br>` +
         `lead ${m.leadership} seam ${m.seamanship} know ${m.knowledge} int ${m.intuition} ` +
@@ -4082,6 +4115,11 @@ document.getElementById('start-overlay').addEventListener('click', function (e) 
   if (e.target.closest('#char-select') || e.target.closest('#rando-box') || started) return;   // picking a hero / using randomizer panel
   this.style.display = 'none';
   started = true;
+  // Isabella starts with her party of 4 companions (Eudora, Mita, Sophia, Barbara)
+  if (P.character === 6 && !P.mates.length) {
+    P.mates = [51, 52, 53, 54];
+    for (const id of P.mates) { initMateSkills(id); P.mateHp[id] = mateMaxHp(id); }
+  }
   save();
   playMusic(seaMusicFor(1));   // Lisbon -> Mediterranean
   showBanner(`Lisbon, Portugal<small>February 1522 — ${CHARACTER_NAMES[P.character]}'s voyage begins</small>`);
