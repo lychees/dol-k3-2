@@ -254,6 +254,16 @@ canvas { display: block; }
 .dialog-main { flex: 1; min-width: 0; }
 .dialog-main h2 { margin-top: 0; }
 
+/* ---------- main storyline (quests tab) ---------- */
+.story-box { text-align: left; background: var(--bg-inset); border: 1px solid var(--bronze);
+             border-radius: var(--radius); padding: 10px 16px; margin-bottom: 8px; }
+.story-box h3 { margin: 0 0 6px; color: var(--gold); font-size: var(--fs-ui); }
+.story-box p { margin: 3px 0; font-size: 14px; }
+.story-done { color: var(--pos); opacity: .75; }
+.story-current { color: var(--gold); font-weight: bold; }
+.story-prog { color: var(--ink); font-weight: normal; }
+.story-future { color: var(--ink-dim); opacity: .6; }
+
 /* ---------- utilities ---------- */
 .key { display: inline-block; border: 1px solid var(--bronze); border-radius: var(--radius-s);
        padding: 0 7px; margin: 0 2px; background: #1a1a1a; color: #fff; font-family: monospace; }

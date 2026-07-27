@@ -311,7 +311,7 @@ seaScene.add(ship);
 const DIRECTION_COL = { up: 0, right: 2, down: 4, left: 6,
                         ne: 2, se: 2, nw: 6, sw: 6 };
 let shipDir = 'down';
-let animFrame = 0, animTimer = 0;
+let animFrame = 0, animTimer = 0, storyT = 0;
 
 function updateShipSprite() {
   shipFrame(shipMap, shipDir, animFrame, curShip().row);   // sprite row by ship size
@@ -441,9 +441,139 @@ let personDir = 'down';
 // cols per character: up 0-1, left 2-3, down 4-5, right 6-7
 const CHARACTER_NAMES = ['João Ferrero', 'Catalina Erantzo', 'Otto Baynes',
                          'Ernst Von Bohr', 'Pietro Conti', 'Ali Vezas'];
+
+// Main storylines — one per hero, 5 chapters each. check() = completion condition,
+// progress() = "cur/goal" text, reward = gold, text = narrative beat on completion.
+const STORYLINES = [
+  { title: 'The Secret of Atlantis', steps: [                       // 0 João
+    { name: 'For the Glory of Portugal', goal: 'Reach fame 5',
+      check: () => P.fame >= 5, progress: () => `${Math.min(P.fame, 5)}/5 fame`, reward: 500,
+      text: 'Well sailed, João! Word of your exploits reaches Duke Leon\'s court. Your voyage for Portugal\'s glory has begun.' },
+    { name: 'Proving Your Worth', goal: 'Make 3 discoveries',
+      check: () => discoveriesFound.size >= 3, progress: () => `${Math.min(discoveriesFound.size, 3)}/3`, reward: 1000,
+      text: 'Your discoveries are the talk of Lisbon. The Duke watches your progress with growing pride.' },
+    { name: 'Royal Favor', goal: 'Reach fame 15',
+      check: () => P.fame >= 15, progress: () => `${Math.min(P.fame, 15)}/15 fame`, reward: 2000,
+      text: 'The crown grants you an audience. "Continue, João — perhaps the legend of Atlantis is more than myth."' },
+    { name: 'The Atlantis Legend', goal: 'Make 8 discoveries',
+      check: () => discoveriesFound.size >= 8, progress: () => `${Math.min(discoveriesFound.size, 8)}/8`, reward: 3000,
+      text: 'Fragments of an ancient map hint at a sunken continent. The secret of Atlantis feels within reach.' },
+    { name: 'The Lost Continent', goal: 'Make 15 discoveries',
+      check: () => discoveriesFound.size >= 15, progress: () => `${Math.min(discoveriesFound.size, 15)}/15`, reward: 10000,
+      text: 'At last — the lost land of Atlantis rises from legend! Your name will echo through the ages, son of Duke Leon Franco.' } ] },
+  { title: 'Vengeance', steps: [                                    // 1 Catalina
+    { name: 'The Red-Haired Pirate', goal: 'Reach fame 5',
+      check: () => P.fame >= 5, progress: () => `${Math.min(P.fame, 5)}/5 fame`, reward: 500,
+      text: 'Your name is whispered in every tavern. The trail of your brother and your beloved grows warmer.' },
+    { name: 'Hunting the Trail', goal: 'Sink 3 ships',
+      check: () => P.shipsSunk >= 3, progress: () => `${Math.min(P.shipsSunk, 3)}/3`, reward: 1000,
+      text: 'Each sunken ship brings you closer to the ones responsible. Portugal will answer for their loss.' },
+    { name: 'Growing Notoriety', goal: 'Reach fame 15',
+      check: () => P.fame >= 15, progress: () => `${Math.min(P.fame, 15)}/15 fame`, reward: 2000,
+      text: 'The red-haired pirate is feared across the seas. Your enemies know you are coming.' },
+    { name: 'The Betrayer\'s Trail', goal: 'Sink 8 ships',
+      check: () => P.shipsSunk >= 8, progress: () => `${Math.min(P.shipsSunk, 8)}/8`, reward: 3000,
+      text: 'The web of betrayal unravels. You can almost see the faces of those who took everything from you.' },
+    { name: 'Vengeance at Last', goal: 'Sink 15 ships',
+      check: () => P.shipsSunk >= 15, progress: () => `${Math.min(P.shipsSunk, 15)}/15`, reward: 10000,
+      text: 'It is done. The sea has claimed your vengeance. May your brother and your beloved finally rest in peace.' } ] },
+  { title: 'The King\'s Privateer', steps: [                        // 2 Otto
+    { name: 'Secret Orders', goal: 'Reach fame 5 (Squire)',
+      check: () => P.fame >= 5, progress: () => `${Math.min(P.fame, 5)}/5 fame`, reward: 500,
+      text: 'King Henry\'s seal glints in your hand. Sail as a privateer, Sir Otto — and keep your mission secret.' },
+    { name: 'Proving Loyalty', goal: 'Reach fame 10 (Knight)',
+      check: () => P.fame >= 10, progress: () => `${Math.min(P.fame, 10)}/10 fame`, reward: 1000,
+      text: 'Your deeds reach London. The King is pleased with his secret knight.' },
+    { name: 'Rising Star', goal: 'Reach fame 20 (Viscount)',
+      check: () => P.fame >= 20, progress: () => `${Math.min(P.fame, 20)}/20 fame`, reward: 2000,
+      text: 'Spain\'s admirals curse your name. The Spanish Fleet weakens under your privateering.' },
+    { name: 'The King\'s Trust', goal: 'Reach fame 30 (Earl)',
+      check: () => P.fame >= 30, progress: () => `${Math.min(P.fame, 30)}/30 fame`, reward: 3000,
+      text: 'The King himself commends you. England\'s dominance of the seas is nearly assured.' },
+    { name: 'Hero of England', goal: 'Reach fame 50 (Duke)',
+      check: () => P.fame >= 50, progress: () => `${Math.min(P.fame, 50)}/50 fame`, reward: 10000,
+      text: 'The Spanish Fleet is broken! King Henry VIII names you a hero of England. Your secret mission is complete.' } ] },
+  { title: 'Map of the World', steps: [                             // 3 Ernst
+    { name: 'Mercator\'s Request', goal: 'Discover 3 ports',
+      check: () => discovered.size >= 3, progress: () => `${Math.min(discovered.size, 3)}/3`, reward: 500,
+      text: 'Your old friend Mercator writes: "Plot the world for me, Ernst. Every coast, every port."' },
+    { name: 'Charting the Coast', goal: 'Discover 8 ports',
+      check: () => discovered.size >= 8, progress: () => `${Math.min(discovered.size, 8)}/8`, reward: 1000,
+      text: 'Your charts grow detailed. Sailors everywhere will soon navigate by your maps.' },
+    { name: 'Unknown Lands', goal: 'Make 3 discoveries',
+      check: () => discoveriesFound.size >= 3, progress: () => `${Math.min(discoveriesFound.size, 3)}/3`, reward: 2000,
+      text: 'Beyond the known coasts lie wonders no map has ever shown. You ink them in, one by one.' },
+    { name: 'The Far Reaches', goal: 'Discover 15 ports',
+      check: () => discovered.size >= 15, progress: () => `${Math.min(discovered.size, 15)}/15`, reward: 3000,
+      text: 'From Lisbon to the farthest shore, your map spans the known world. Mercator will be astonished.' },
+    { name: 'The Complete Map', goal: 'Discover 25 ports',
+      check: () => discovered.size >= 25, progress: () => `${Math.min(discovered.size, 25)}/25`, reward: 10000,
+      text: 'It is finished — a detailed map of the entire world! Your name joins Mercator\'s among the great geographers.' } ] },
+  { title: 'The Conti Debt', steps: [                               // 4 Pietro
+    { name: 'A Family\'s Burden', goal: 'Amass 10,000 gold',
+      check: () => P.gold >= 10000, progress: () => `${Math.min(P.gold, 10000)}/10000g`, reward: 500,
+      text: 'The Conti debt hangs over you, but every coin earned is a step toward freedom.' },
+    { name: 'First Treasures', goal: 'Dig up 2 treasures',
+      check: () => P.treasuresDug >= 2, progress: () => `${Math.min(P.treasuresDug, 2)}/2`, reward: 1000,
+      text: 'Glittering treasure! The rumors were true — the world is full of riches for those who seek them.' },
+    { name: 'Exotic Riches', goal: 'Amass 40,000 gold',
+      check: () => P.gold >= 40000, progress: () => `${Math.min(P.gold, 40000)}/40000g`, reward: 2000,
+      text: 'Your coffers swell. The moneylenders of Genoa grow nervous — the Conti name is rising again.' },
+    { name: 'The Great Haul', goal: 'Dig up 4 treasures',
+      check: () => P.treasuresDug >= 4, progress: () => `${Math.min(P.treasuresDug, 4)}/4`, reward: 3000,
+      text: 'Another vault of treasure! Your exploits as a treasure hunter are legendary.' },
+    { name: 'Debt Repaid', goal: 'Amass 100,000 gold',
+      check: () => P.gold >= 100000, progress: () => `${Math.min(P.gold, 100000)}/100000g`, reward: 10000,
+      text: 'The last coin is paid. The Conti family debt is erased — and you are richer than ever. The world is yours!' } ] },
+  { title: 'The Merchant of Istanbul', steps: [                     // 5 Ali
+    { name: 'A Merchant\'s Dream', goal: 'Amass 5,000 gold',
+      check: () => P.gold >= 5000, progress: () => `${Math.min(P.gold, 5000)}/5000g`, reward: 500,
+      text: 'From the bazaars of Istanbul to distant shores, your trading journey begins. Fortune favors the bold.' },
+    { name: 'Establishing Routes', goal: 'Discover 5 ports',
+      check: () => discovered.size >= 5, progress: () => `${Math.min(discovered.size, 5)}/5`, reward: 1000,
+      text: 'New ports, new markets, new profits. Your trade network begins to span the seas.' },
+    { name: 'Building Wealth', goal: 'Amass 25,000 gold',
+      check: () => P.gold >= 25000, progress: () => `${Math.min(P.gold, 25000)}/25000g`, reward: 2000,
+      text: 'Your ships return heavy with goods and gold. Merchants from Venice to Alexandria know your name.' },
+    { name: 'Master of Trade', goal: 'Discover 12 ports',
+      check: () => discovered.size >= 12, progress: () => `${Math.min(discovered.size, 12)}/12`, reward: 3000,
+      text: 'Your trade routes circle the globe. No market is beyond your reach.' },
+    { name: 'Trade Magnate', goal: 'Amass 100,000 gold',
+      check: () => P.gold >= 100000, progress: () => `${Math.min(P.gold, 100000)}/100000g`, reward: 10000,
+      text: 'You are a magnate of trade, wealthier than sultans! The boy who struggled in Istanbul now rules the markets of the world.' } ] },
+];
+
+// recolored DOS hero portraits (Ali cropped from the DOS char-select screen)
+const DOS_PORTRAIT = {
+  0: './assets/dos/hero_hero_b1.png',   // João
+  1: './assets/dos/hero_catalina.png',  // Catalina
+  2: './assets/dos/hero_otto.png',      // Otto
+  3: './assets/dos/hero_hero_b2.png',   // Ernst
+  4: './assets/dos/hero_hero_b3.png',   // Pietro
+  5: './assets/dos/hero_ali.png',       // Ali
+};
+
+// main storyline progression: advance the current chapter when its condition is met
+function checkStory() {
+  const s = STORYLINES[P.character];
+  if (!s || P.story.step >= s.steps.length) return;   // no storyline / already finished
+  const step = s.steps[P.story.step];
+  if (step.check()) {
+    P.story.step++;
+    P.gold += step.reward;
+    const done = P.story.step >= s.steps.length;
+    showDialog(CHARACTER_NAMES[P.character],
+      step.text + (done ? '<br><b>— Main storyline complete! —</b>' : ''),
+      DOS_PORTRAIT[P.character]);
+    save();
+    // auto-close the story beat after a few seconds so it doesn't block play
+    clearTimeout(checkStory._t);
+    checkStory._t = setTimeout(() => { if (PANELS.dialog.open) closeDialog(); }, 4500);
+  }
+}
+
 const heroFrame = (map, dir, frame, charRow) => {
-  const col = DIRECTION_COL[dir] + frame;
-  map.offset.set(col * 68 / HEROES_W, 1 - (charRow * 68 + 68) / HEROES_H);
+  const col = DIRECTION_COL[dir] + frame;  map.offset.set(col * 68 / HEROES_W, 1 - (charRow * 68 + 68) / HEROES_H);
 };
 
 function updatePersonSprite() {
@@ -1631,6 +1761,8 @@ let P = {
   portDev: {},                        // portId -> {dev, mine}
   pirateRate: 25,                     // auto-spawn interval (0 = none)
   devSpeed: null,                 // developer-mode ship speed override
+  story: { step: 0 },                 // main storyline progress (per hero)
+  shipsSunk: 0, treasuresDug: 0,      // storyline counters
 };
 try {
   const s = JSON.parse(localStorage.getItem(SAVE_KEY));
@@ -1670,6 +1802,10 @@ delete P.ship;
 delete P.hull;
 P.cargoCost = P.cargoCost ?? {};
 if (P.character > CHARACTER_NAMES.length - 1) P.character = 0;
+// migrate storyline fields
+P.story = P.story ?? { step: 0 };
+P.shipsSunk = P.shipsSunk ?? 0;
+P.treasuresDug = P.treasuresDug ?? 0;
 
 
 const flag = () => P.fleet[0];                      // flagship
@@ -2893,6 +3029,19 @@ const MENU_RENDER = {
   },
   quests() {
     let html = '';
+    // main storyline progress (per hero)
+    const s = STORYLINES[P.character];
+    if (s) {
+      html += `<div class="story-box"><h3>⚑ ${s.title}</h3>`;
+      s.steps.forEach((st, i) => {
+        if (i < P.story.step) html += `<p class="story-done">✓ ${st.name}</p>`;
+        else if (i === P.story.step)
+          html += `<p class="story-current">▶ ${st.name} — ${st.goal} <span class="story-prog">(${st.progress()})</span></p>`;
+        else html += `<p class="story-future">· ${st.name}</p>`;
+      });
+      if (P.story.step >= s.steps.length) html += `<p class="story-done"><b>— Storyline complete! —</b></p>`;
+      html += `</div><hr style="border-color:#2a3444">`;
+    }
     if (P.discoveryQuest) {
       const v = villages.find(x => x.id === P.discoveryQuest);
       html += `<p><b>Research quest (MSC)</b>: find <b>${v.name}</b> at ${fmtLonLat(v.x, v.y)}, ` +
@@ -3087,6 +3236,7 @@ function fireCannon() {
 
 function digTreasure(q) {
   q.done = true;
+  P.treasuresDug++;
   P.gold += q.gold;
   P.fame += 3;
   let extra = '';
@@ -3112,6 +3262,7 @@ function markBountyDone(p) {
 
 function sinkEnemy() {
   const p = battle.enemy;
+  P.shipsSunk++;
   xpInCabins('captain', 'leadership', 5);
   markBountyDone(p);
   removePirate(p);
@@ -3794,6 +3945,7 @@ window.UW = {
   getBuildings: () => portBuildings,
   getInBuilding: () => inBuilding,
   getDiscovered: () => [...discoveriesFound],
+  getPortsFound: () => [...discovered],
   teleport: (x, z) => { shipPos.x = x; shipPos.z = z; },
   walkTo: (x, z) => { personPos.x = x; personPos.z = z; },
   landTo: (x, z) => { landPos.x = x; landPos.z = z; },
@@ -3858,15 +4010,6 @@ window.UW = {
 // character selection on the start overlay (DOS large portraits from OPGRAPH)
 {
   const picker = document.getElementById('char-select');
-  // recolored DOS portraits (Ali cropped from the DOS char-select screen)
-  const DOS_PORTRAIT = {
-    0: './assets/dos/hero_hero_b1.png',   // João
-    1: './assets/dos/hero_catalina.png',  // Catalina
-    2: './assets/dos/hero_otto.png',      // Otto
-    3: './assets/dos/hero_hero_b2.png',   // Ernst
-    4: './assets/dos/hero_hero_b3.png',   // Pietro
-    5: './assets/dos/hero_ali.png',       // Ali
-  };
   CHARACTER_NAMES.forEach((name, ci) => {
     let c;
     if (DOS_PORTRAIT[ci]) {
@@ -3947,6 +4090,10 @@ document.getElementById('start-overlay').addEventListener('click', function (e) 
 function tick() {
   requestAnimationFrame(tick);
   const dt = Math.min(clock.getDelta(), 0.1);
+
+  // main storyline: check progress about once a second
+  storyT += dt;
+  if (storyT > 1) { storyT = 0; if (started && !gameover) checkStory(); }
 
   // --- movement input (read first: sailing speeds up the calendar) ---
   let dx = 0, dz = 0;
