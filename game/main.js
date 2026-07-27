@@ -377,8 +377,8 @@ function makePortPoints(list, tex) {
     map: tex, size: 2.2, transparent: true, depthWrite: false, sizeAttenuation: true,
   }));
 }
-const cityPorts = ports.filter(p => p.id <= 101);
-const supplyPorts = ports.filter(p => p.id > 101);
+const cityPorts = ports.filter(p => p.id <= 101 || p.id === 132);   // Faro (132) is a city port
+const supplyPorts = ports.filter(p => p.id > 101 && p.id !== 132);
 const portPoints = makePortPoints(cityPorts, portIconTex);
 const supplyPoints = makePortPoints(supplyPorts, supplyIconTex);
 seaScene.add(portPoints);
@@ -659,7 +659,7 @@ const walkableAt = (x, z) => {
 };
 
 // ports without their own PORTMAP reuse another port's map
-const PORT_MAP_OVERRIDE = { 131: 94 };   // Tamsui walks Zeiton's streets
+const PORT_MAP_OVERRIDE = { 131: 94, 132: 0 };   // Tamsui walks Zeiton's streets; Faro reuses Lisbon's map
 
 async function enterPort(pid) {
   // arriving on foot (land expedition): remember where to walk back to
@@ -2068,6 +2068,7 @@ function portDevOf(pid) {
   if (!P.portDev[pid]) {
     const p = ports.find(x => x.id === pid);
     const dev = pid === 131 ? 150
+              : pid === 132 ? 200
               : CAPITAL_PORTS.includes(p?.name) ? 500
               : pid > 101 ? 100 : 200;
     P.portDev[pid] = { dev, mine: 0 };
@@ -2286,6 +2287,49 @@ function buildingMenu(b) {
   if (!b) return [];
   const ship = curShip();
   switch (b.name) {
+    // --- Isabella prologue (Faro) ---
+    case 'cemetery': {
+      if (P.character === 6 && P.prologue && P.prologue.step === 0) {
+        return [{ label: 'Lay flowers at your mother\'s grave', action() {
+          P.prologue.step = 1;
+          showDialog(CHARACTER_NAMES[6],
+            'You kneel and lay fresh flowers on the grave. <i>Mother…</i><br><br>' +
+            '<b>— flashback —</b><br>Word of your mother\'s passing reached Duke Leon Franco in Lisbon. ' +
+            'Grieving, he resolved to bring his daughter home: "Isabella will come to Lisbon, where I can watch over her."<br><br>' +
+            'In the distance, a blonde girl (Eudora) watches you quietly from behind a tree.',
+            DOS_PORTRAIT[6]);
+          save();
+        } }];
+      }
+      return [{ label: 'A quiet cemetery. The graves are well-tended.', disabled: true, action() {} }];
+    }
+    case 'teacher': {
+      if (P.character === 6 && P.prologue && P.prologue.step === 1) {
+        return [{ label: 'Say goodbye to your teacher', action() {
+          P.prologue.step = 2;
+          showDialog('Teacher',
+            '"So you\'re going to Lisbon, Isabella — your father the Duke has called for you.<br>' +
+            'Take my research with you. And Eudora, my daughter, will go with you. Watch over each other."',
+            DOS_PORTRAIT[6]);
+          save();
+        } }];
+      }
+      return [{ label: 'Your teacher\'s study, lined with ancient texts.', disabled: true, action() {} }];
+    }
+    case 'home': {
+      if (P.character === 6 && P.prologue && P.prologue.step === 2) {
+        return [{ label: 'Sleep', action() {
+          P.prologue.step = 3;
+          onNewDay();   // advance to the next day
+          showDialog(CHARACTER_NAMES[6],
+            'You pack your few belongings and lie down, heart pounding. Tomorrow you sail for Lisbon — ' +
+            'a new life with your father, the Duke.<br><br><i>(Next: board the merchant ship at the harbor.)</i>',
+            DOS_PORTRAIT[6]);
+          save();
+        } }];
+      }
+      return [{ label: 'Your modest home in Faro.', disabled: true, action() {} }];
+    }
     case 'harbor': {
       const menu = [
         { label: 'Resupply (fill up)', action() { openPanel('supply'); } },
@@ -2296,6 +2340,19 @@ function buildingMenu(b) {
           action() { const n = Math.min(50, cargoSpace()); P.gold -= n; P.food += n;
                      setBuildingText(`Rations stowed aboard (+${n}). The crew is ready.`); } },
       ];
+      // Isabella prologue: board the merchant ship to Lisbon
+      if (P.character === 6 && P.prologue && P.prologue.step === 3) {
+        menu.unshift({ label: 'Board the merchant ship to Lisbon', action() {
+          P.prologue.step = 4;   // prologue done
+          landExpedition = false;
+          scene = 'sea';
+          const lisbon = ports.find(p => p.id === 1);
+          const [sx, sz] = sailableNear(lisbon.x, lisbon.y);
+          shipPos.set(sx, 0, sz);
+          showBanner('To Lisbon!<small>your journey with Eudora and your companions begins</small>');
+          save();
+        } });
+      }
       if (landExpedition) {
         menu.push({ label: 'Leave the city (on foot)', action() { exitPortToLand(); } });
       } else {
@@ -3149,7 +3206,7 @@ const MENU_RENDER = {
       html += `<p><b>${CHARACTER_NAMES[P.character]}</b> · ${HERO_NATION[P.character]}${fameTitle() ? ' · ' + fameTitle() : ''}</p>` +
         fameBox(P.navalFame, P.tradeFame, P.adventureFame, P.notoriety) +
         `<p>str ${a.str} · agi ${a.agi} · con ${a.con} · int ${a.int} · per ${a.per} · cha ${a.cha}</p>` +
-        `<p>hp${hudBar(P.hero.hp / heroMaxHp(), '#5bff8c')} ${P.hero.hp}/${heroMaxHp()} · sp${hudBar(P.hero.sp / heroMaxSp(), '#5b8cff')} ${P.hero.sp}/${heroMaxSp()}</p>`;
+        `<p style="white-space:nowrap">hp${hudBar(P.hero.hp / heroMaxHp(), '#5bff8c')} ${P.hero.hp}/${heroMaxHp()} · sp${hudBar(P.hero.sp / heroMaxSp(), '#5b8cff')} ${P.hero.sp}/${heroMaxSp()}</p>`;
     } else {
       const id = +sel.slice(4);
       const m = matesData[id];
@@ -3160,7 +3217,7 @@ const MENU_RENDER = {
       html += `<p><b>${m.name}</b> · ${m.nation} · lv ${m.lv}</p>` +
         fameBox(f.naval, f.trade, f.adventure, f.notoriety ?? 0) +
         `<p>str ${a.str} · agi ${a.agi} · con ${a.con} · int ${a.int} · per ${a.per} · cha ${a.cha}</p>` +
-        `<p>hp${hudBar(hp / maxHp, '#5bff8c')} ${hp}/${maxHp} · sp${hudBar(sp / maxSp, '#5b8cff')} ${sp}/${maxSp}</p>`;
+        `<p style="white-space:nowrap">hp${hudBar(hp / maxHp, '#5bff8c')} ${hp}/${maxHp} · sp${hudBar(sp / maxSp, '#5b8cff')} ${sp}/${maxSp}</p>`;
     }
     return html + '</div></div>';
   },
@@ -3215,7 +3272,7 @@ const MENU_RENDER = {
     return `<p><b>${CHARACTER_NAMES[P.character]}</b> · ${HERO_NATION[P.character]}${fameTitle() ? ' · ' + fameTitle() : ''}</p>` +
       fameBox(P.navalFame, P.tradeFame, P.adventureFame, P.notoriety) +
       `<p>str ${a.str} · agi ${a.agi} · con ${a.con} · int ${a.int} · per ${a.per} · cha ${a.cha}</p>` +
-      `<p>hp${hudBar(P.hero.hp / heroMaxHp(), '#5bff8c')} ${P.hero.hp}/${heroMaxHp()} · sp${hudBar(P.hero.sp / heroMaxSp(), '#5b8cff')} ${P.hero.sp}/${heroMaxSp()}</p>` +
+      `<p style="white-space:nowrap">hp${hudBar(P.hero.hp / heroMaxHp(), '#5bff8c')} ${P.hero.hp}/${heroMaxHp()} · sp${hudBar(P.hero.sp / heroMaxSp(), '#5b8cff')} ${P.hero.sp}/${heroMaxSp()}</p>` +
       `<p>gold: ${P.gold}g · bank: ${P.bank}g · days: ${P.days} · water: ${Math.floor(P.water)} · food: ${Math.floor(P.food)} · vigor: ${100 - Math.floor(P.fatigue)}</p>` +
       `<h3 style="color:#ffd94d;margin:8px 0 2px">hero</h3>` +
       `<p>lv ${P.hero.lv} · atk ${heroAtk()} · def ${heroDef()} · weapon t${P.hero.weapon} · armor t${P.hero.armor} · balms ${P.hero.balms}</p>` +
@@ -4317,6 +4374,27 @@ document.getElementById('start-overlay').addEventListener('click', function (e) 
   if (P.character === 6 && !P.mates.length) {
     P.mates = [51, 52, 53, 54];
     for (const id of P.mates) { initMateSkills(id); P.mateHp[id] = mateMaxHp(id); }
+  }
+  // Isabella starts ashore in Faro with her prologue
+  if (P.character === 6 && !P.prologue) {
+    P.prologue = { step: 0 };
+    const faro = ports.find(p => p.id === 132);
+    const [sx, sz] = sailableNear(faro.x, faro.y);
+    shipPos.set(sx, 0, sz);
+    landPos.set(faro.x + 0.5, 0.4, faro.y + 0.5);   // on land near Faro
+    scene = 'land';
+    landExpedition = true;
+    camDist = 16;
+    showLandPerson();
+    save();
+    playMusic(portMusicFor(132));
+    showBanner(`Faro, Portugal<small>February 1522 — ${CHARACTER_NAMES[P.character]}'s story begins</small>`);
+    showDialog(CHARACTER_NAMES[P.character],
+      'Faro, Portugal. Every week you visit your mother\'s grave in the cemetery outside the city, ' +
+      'tending it with fresh flowers.<br><br><i>(Prologue — visit the cemetery to lay flowers. ' +
+      'Or head to the harbor to skip ahead to Lisbon.)</i>',
+      DOS_PORTRAIT[P.character]);
+    return;
   }
   save();
   playMusic(seaMusicFor(1));   // Lisbon -> Mediterranean
