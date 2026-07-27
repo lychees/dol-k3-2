@@ -4375,17 +4375,15 @@ document.getElementById('start-overlay').addEventListener('click', function (e) 
     P.mates = [51, 52, 53, 54];
     for (const id of P.mates) { initMateSkills(id); P.mateHp[id] = mateMaxHp(id); }
   }
-  // Isabella starts ashore in Faro with her prologue
+  // Isabella starts inside the Faro port with her prologue
   if (P.character === 6 && !P.prologue) {
     P.prologue = { step: 0 };
     const faro = ports.find(p => p.id === 132);
     const [sx, sz] = sailableNear(faro.x, faro.y);
     shipPos.set(sx, 0, sz);
-    landPos.set(faro.x + 0.5, 0.4, faro.y + 0.5);   // on land near Faro
-    scene = 'land';
+    enterPort(132);   // start inside the Faro port
     landExpedition = true;
-    camDist = 16;
-    showLandPerson();
+    portReturnPos = { x: faro.x + 0.5, z: faro.y + 0.5 };   // land tile near Faro (for exiting on foot)
     save();
     playMusic(portMusicFor(132));
     showBanner(`Faro, Portugal<small>February 1522 — ${CHARACTER_NAMES[P.character]}'s story begins</small>`);
