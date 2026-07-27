@@ -570,13 +570,13 @@ const STORYLINES = [
       text: 'With the spiritual power gathered, you open the way home and see Yudora safely back to her own world. Your fantastical journey becomes legend, Isabella!' } ] },
 ];
 
-// recolored DOS hero portraits (Ali cropped from the DOS char-select screen)
+// recolored DOS hero portraits (first 6 of assets_dos/portraits/portraits.png, in CHARACTER_NAMES order)
 const DOS_PORTRAIT = {
-  0: './assets/dos/hero_hero_b1.png',   // João
+  0: './assets/dos/hero_joao.png',      // João
   1: './assets/dos/hero_catalina.png',  // Catalina
   2: './assets/dos/hero_otto.png',      // Otto
-  3: './assets/dos/hero_hero_b2.png',   // Ernst
-  4: './assets/dos/hero_hero_b3.png',   // Pietro
+  3: './assets/dos/hero_ernst.png',     // Ernst
+  4: './assets/dos/hero_pietro.png',    // Pietro
   5: './assets/dos/hero_ali.png',       // Ali
   6: './assets/waifu/isabella.png',     // Isabella (waifulabs)
 };
