@@ -2624,7 +2624,7 @@ function buildingMenu(b) {
             '"Isabella… my daughter. You\'ve grown so much since I last saw you as a child.<br><br>' +
             'I heard about your mother. I\'m so sorry — I should have been there for you both.<br><br>' +
             '<i>(You want to tell him how he neglected you and mother all these years… but you hold your tongue.)</i>',
-            DOS_PORTRAIT[6]);
+            './assets/dos/duke.png');
           save();
         } }];
       }
@@ -2728,7 +2728,7 @@ function openBuilding(b) {
   setBuildingText(BUILDING_FLAVOR[b.name] ?? 'Welcome!');
   renderActions(buildingMenu(b));
   buildingPanel.style.display = 'block';
-  if (['bar', 'church', 'palace'].includes(b.name)) {
+  if (['bar', 'church', 'palace', 'msc'].includes(b.name)) {
     playMusic(`./assets/music/building/${b.name}.mp3`);
   }
 }
@@ -4191,7 +4191,7 @@ document.getElementById('dev-speed-reset').onclick = () => {
 // ---------------------------------------------------------------------------
 // Music (region-based, following uw2ol's mapping in gui.py)
 // ---------------------------------------------------------------------------
-const PORTS_WITH_OWN_THEME = ['Lisbon', 'Seville', 'London', 'Marseille', 'Amsterdam', 'Venice'];
+const PORTS_WITH_OWN_THEME = ['Lisbon', 'Seville', 'London', 'Marseille', 'Amsterdam', 'Venice', 'Faro'];
 const PORT_MUSIC_BY_REGION = {
   'North Africa': 'African Town.mp3', 'East Africa': 'African Town.mp3', 'West Africa': 'African Town.mp3',
   'Middle East': 'Middle Eastern Town.mp3', 'Ottoman Empire': 'Middle Eastern Town.mp3',
@@ -4562,6 +4562,7 @@ function tick() {
     }
     shipPos.x = wrapX(shipPos.x);          // toroidal world: wrap, don't clamp
     shipPos.z = wrapZ(shipPos.z);
+    ship.visible = P.fleet.length > 0;   // hide own ship when riding someone else's (no ship)
     ship.position.copy(shipPos);
     updateShipSprite();
 
