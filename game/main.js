@@ -3225,13 +3225,23 @@ const MENU_RENDER = {
     return html + '</table>';
   },
   discoveries() {
+    const SUBJECT_LABEL = { archaeology: '考古', geography: '地理', treasure: '财宝',
+                            religion: '宗教', biology: '生物', art: '艺术' };
     const found = villages.filter(v => discoveriesFound.has(v.id));
     let html = `<p>${found.length} / ${villages.length} discovered</p>`;
     if (!found.length) return html + '<p>Nothing yet — go ashore where things seem interesting.</p>';
-    for (const v of found) {
-      html += `<div class="mate-card"><canvas class="disc-thumb" data-img="${v.img[0]},${v.img[1]}" ` +
-        `width="49" height="49" style="image-rendering:pixelated;border:1px solid #8a6d3b;border-radius:3px"></canvas>` +
-        `<div class="mate-stats"><b>${v.name}</b> · ${fmtLonLat(v.x, v.y)}<br>${v.desc.slice(0, 90)}…</div></div>`;
+    // group discoveries by subject (6 disciplines)
+    const groups = {};
+    for (const v of found) (groups[v.subject] = groups[v.subject] ?? []).push(v);
+    for (const [subj, label] of Object.entries(SUBJECT_LABEL)) {
+      const list = groups[subj];
+      if (!list) continue;
+      html += `<h3 style="color:#ffd94d;margin:8px 0 2px">${label} (${list.length})</h3>`;
+      for (const v of list) {
+        html += `<div class="mate-card"><canvas class="disc-thumb" data-img="${v.img[0]},${v.img[1]}" ` +
+          `width="49" height="49" style="image-rendering:pixelated;border:1px solid #8a6d3b;border-radius:3px"></canvas>` +
+          `<div class="mate-stats"><b>${v.name}</b> · ${fmtLonLat(v.x, v.y)}<br>${v.desc.slice(0, 90)}…</div></div>`;
+      }
     }
     return html;
   },
@@ -4156,6 +4166,7 @@ window.UW = {
   getBuildings: () => portBuildings,
   getInBuilding: () => inBuilding,
   getDiscovered: () => [...discoveriesFound],
+  addDiscovery: id => discoveriesFound.add(id),
   getPortsFound: () => [...discovered],
   teleport: (x, z) => { shipPos.x = x; shipPos.z = z; },
   walkTo: (x, z) => { personPos.x = x; personPos.z = z; },
