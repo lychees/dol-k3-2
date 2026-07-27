@@ -765,7 +765,7 @@ function closePanel(name) {
   if (p.building && inBuilding) buildingPanel.style.display = 'block';
 }
 const anyPanelOpen = () => Object.values(PANELS).some(p => p.open);
-const SUB_PANELS = ['market', 'shipyard', 'mates', 'outfit'];
+const SUB_PANELS = ['market', 'shipyard', 'mates', 'outfit', 'crew'];
 // close the first open panel from `names`; returns true if something was closed
 const closeFirstOpen = names => {
   for (const n of names) {
@@ -1616,13 +1616,20 @@ function openTown(t) {
     document.getElementById('town-text').textContent = 'You spend a restful night. The party is fully refreshed.';
     save();
   }, P.gold < 10);
-  mk('Buy provisions +50 (50g)', () => {
-    if (P.gold < 50 || P.provisions >= 100) return;
-    P.gold -= 50;
-    P.provisions = Math.min(100, P.provisions + 50);
-    document.getElementById('town-text').textContent = 'Supplies loaded onto the ship via the local caravans.';
+  mk('Buy water +25 (25g)', () => {
+    if (P.gold < 25 || cargoSpace() < 1) return;
+    const n = Math.min(25, cargoSpace());
+    P.gold -= n; P.water += n;
+    document.getElementById('town-text').textContent = 'Fresh water loaded onto the ship via the local caravans.';
     save();
-  }, P.gold < 50 || P.provisions >= 100);
+  }, P.gold < 25 || cargoSpace() < 1);
+  mk('Buy food +25 (25g)', () => {
+    if (P.gold < 25 || cargoSpace() < 1) return;
+    const n = Math.min(25, cargoSpace());
+    P.gold -= n; P.food += n;
+    document.getElementById('town-text').textContent = 'Rations stowed aboard the ship via the local caravans.';
+    save();
+  }, P.gold < 25 || cargoSpace() < 1);
   // a ship can only be boarded here if it is actually here (UW3-style);
   // otherwise buy a new one to set sail from this town
   const shipDist = Math.hypot(t.x - shipPos.x, t.z - shipPos.z);
@@ -1774,7 +1781,7 @@ const TITLES = [[50, 'Duke'], [40, 'Marquis'], [30, 'Earl'], [20, 'Viscount'],
 
 const SAVE_KEY = 'uw-save-v1';
 let P = {
-  gold: 1000, fame: 0, provisions: 100, fatigue: 0,
+  gold: 1000, fame: 0, water: 15, food: 15, fatigue: 0,
   fleet: [{ ship: 'Balsa', hull: 60 }],   // up to 5 ships; [0] = flagship
   cargo: {}, cargoCost: {}, bank: 0,
   crew: 5, mates: [],
@@ -1834,6 +1841,20 @@ if (P.character > CHARACTER_NAMES.length - 1) P.character = 0;
 P.story = P.story ?? { step: 0 };
 P.shipsSunk = P.shipsSunk ?? 0;
 P.treasuresDug = P.treasuresDug ?? 0;
+// migrate provisions -> water/food (split into two cargo-shared resources)
+if (P.provisions !== undefined) {
+  if (P.water === undefined) P.water = Math.ceil(P.provisions / 2);
+  if (P.food === undefined) P.food = Math.floor(P.provisions / 2);
+  delete P.provisions;
+}
+P.water = P.water ?? 15;
+P.food = P.food ?? 15;
+// backward-compat alias: P.provisions = min(water, food) (tests/HUD use it)
+Object.defineProperty(P, 'provisions', {
+  get: () => Math.min(P.water, P.food),
+  set: v => { P.water = v; P.food = v; },
+  configurable: true,
+});
 
 
 const flag = () => P.fleet[0];                      // flagship
@@ -2072,13 +2093,13 @@ function save() {
   localStorage.setItem(SAVE_KEY, JSON.stringify(P));
 }
 
-const cargoUsed = () => Object.values(P.cargo).reduce((a, b) => a + b, 0);
+const cargoUsed = () => Object.values(P.cargo).reduce((a, b) => a + b, 0) + Math.ceil((P.water + P.food) / 10);   // goods + water/food (10:1) share the hold
 const cargoSpace = () => fleetCargoCap() - cargoUsed();
 const fameTitle = () => TITLES.find(([n]) => P.fame >= n)[1];
 
 function speedFactor() {
   if (flag().hull <= 0) return 0.25;
-  if (P.provisions <= 0 || P.fatigue >= 90) return 0.5;
+  if ((P.water <= 0 || P.food <= 0) || P.fatigue >= 90) return 0.5;
   return 1;
 }
 
@@ -2098,18 +2119,20 @@ function settleConsumption() {
     // expeditions eat and tire like in UW3
     const terrain = terrainAt(landPos.z);
     const drain = (terrain === 'snow' ? 4 : terrain === 'plains' ? 6 : 10) / 2;
-    P.provisions = Math.max(0, P.provisions - drain * boatswainFactor());
+    P.water = Math.max(0, P.water - drain / 2 * boatswainFactor());
+    P.food = Math.max(0, P.food - drain / 2 * boatswainFactor());
     P.fatigue = Math.min(100, P.fatigue + (terrain === 'snow' ? 18 : 10) / 2 * (P.equipment.figurehead ? 0.5 : 1) * surgeonFactor());
-    if (P.provisions <= 0) {
+    if (P.water <= 0 || P.food <= 0) {
       P.hero.hp = Math.max(1, P.hero.hp - 3);
-      showBanner('Out of provisions!<small>the expedition is starving — find a town or your ship</small>');
+      showBanner('Out of water and rations!<small>the expedition is starving — find a town or your ship</small>');
     }
   }
   if (scene === 'sea') {
-    // water & rations: more mouths to feed -> faster drain
+    // water & rations: more mouths to feed -> faster drain; each drains at half rate
     const drain = (4 + P.crew * 0.25) / 2 * boatswainFactor();
-    P.provisions = Math.max(0, P.provisions - drain);
-    const starving = P.provisions <= 0;
+    P.water = Math.max(0, P.water - drain / 2);
+    P.food = Math.max(0, P.food - drain / 2);
+    const starving = P.water <= 0 || P.food <= 0;
     // a starving crew tires far faster
     P.fatigue = Math.min(100, P.fatigue + 6 * (starving ? 3 : 1)
                  * (P.equipment.figurehead ? 0.5 : 1) * surgeonFactor() * chapelFactor());
@@ -2202,10 +2225,12 @@ function buildingMenu(b) {
   switch (b.name) {
     case 'harbor': {
       const menu = [
-        { label: 'Buy provisions (fill to 100)', cost: 100 - P.provisions,
-          disabled: P.provisions >= 100,
-          action() { P.gold -= 100 - P.provisions; P.provisions = 100;
-                     setBuildingText('Provisions loaded. The crew is ready.'); } },
+        { label: 'Buy water +50 (50g)', cost: 50, disabled: cargoSpace() < 1,
+          action() { const n = Math.min(50, cargoSpace()); P.gold -= n; P.water += n;
+                     setBuildingText(`Fresh water loaded (+${n}). The crew is ready.`); } },
+        { label: 'Buy food +50 (50g)', cost: 50, disabled: cargoSpace() < 1,
+          action() { const n = Math.min(50, cargoSpace()); P.gold -= n; P.food += n;
+                     setBuildingText(`Rations stowed aboard (+${n}). The crew is ready.`); } },
       ];
       if (landExpedition) {
         menu.push({ label: 'Leave the city (on foot)', action() { exitPortToLand(); } });
@@ -2247,19 +2272,8 @@ function buildingMenu(b) {
           const v = unknown[Math.floor(Math.random() * unknown.length)];
           setBuildingText(`"I heard there's something interesting at ${fmtLonLat(v.x, v.y)}… worth a look, captain."`);
         } },
-        { label: `Hire sailors +10 (${P.crew}/${fleetMaxCrew()})`, cost: 1000,
-          disabled: P.crew >= fleetMaxCrew(),
-          action() {
-            const n = Math.min(10, fleetMaxCrew() - P.crew);
-            P.gold -= n * 100; P.crew += n;
-            setBuildingText(`${n} sturdy sailors join your crew. (${P.crew}/${fleetMaxCrew()})`);
-          } },
-        { label: 'Dismiss sailors -10', disabled: P.crew <= fleetMinCrew(),
-          action() {
-            const n = Math.min(10, P.crew - fleetMinCrew());
-            P.crew -= n;
-            setBuildingText(`${n} sailors take their pay and leave. (${P.crew}/${fleetMaxCrew()})`);
-          } },
+        { label: `Resupply sailors (${P.crew}/${fleetMaxCrew()})`,
+          action() { openPanel('crew'); } },
       ];
       // this port's mate (uw2ol: even 1-based port id -> mate id = portId/2)
       const mateId = portId <= 100 && portId % 2 === 0 ? portId / 2 : null;
@@ -2503,8 +2517,11 @@ function buildingMenu(b) {
       { label: 'Telescope (spot discoveries from afar)', cost: 2000, disabled: P.telescope,
         action() { P.gold -= 2000; P.telescope = true;
                    setBuildingText('With the telescope you can spot interesting sites from much farther away.'); } },
-      { label: 'Rations (+50 provisions)', cost: 100, disabled: P.provisions >= 100,
-        action() { P.gold -= 100; P.provisions = Math.min(100, P.provisions + 50);
+      { label: 'Water (+50, 50g)', cost: 50, disabled: cargoSpace() < 1,
+        action() { const n = Math.min(50, cargoSpace()); P.gold -= n; P.water += n;
+                   setBuildingText('Fresh water stowed aboard.'); } },
+      { label: 'Rations (+50 food, 50g)', cost: 50, disabled: cargoSpace() < 1,
+        action() { const n = Math.min(50, cargoSpace()); P.gold -= n; P.food += n;
                    setBuildingText('Hardtack and salted pork stowed aboard.'); } },
       { label: 'Lime juice (-50 fatigue)', cost: 300, disabled: P.fatigue <= 0,
         action() { P.gold -= 300; P.fatigue = Math.max(0, P.fatigue - 50);
@@ -2515,8 +2532,8 @@ function buildingMenu(b) {
         P.gold -= 20;
         const roll = Math.random();
         if (roll < 0.3) { P.fame += 1; setBuildingText('Your generosity is remembered. (fame +1)'); }
-        else if (roll < 0.6) { P.provisions = Math.min(100, P.provisions + 20);
-          setBuildingText('The sisters share bread with your crew. (provisions +20)'); }
+        else if (roll < 0.6) { P.water += 10; P.food += 10;
+          setBuildingText('The sisters share bread and water with your crew. (water +10, food +10)'); }
         else setBuildingText('Peace settles over you. Safe travels, captain.');
       } },
     ];
@@ -2975,6 +2992,32 @@ function renderOutfit() {
 
 definePanel('outfit', outfitPanel, { building: true, render: renderOutfit });
 
+// --- Sailors (tavern sub-panel): one-click resupply to min / max crew ---
+const crewPanel = document.getElementById('crew-panel');
+function renderCrew() {
+  const minC = fleetMinCrew(), maxC = fleetMaxCrew();
+  document.getElementById('crew-info').innerHTML =
+    `crew: <b>${P.crew}</b> / ${maxC} &nbsp;·&nbsp; minimum: <b>${minC}</b> &nbsp;·&nbsp; 100g per sailor`;
+  const div = document.getElementById('crew-actions');
+  div.innerHTML = '';
+  const hireTo = (target, label) => {
+    const need = target - P.crew;
+    mkBtn(div, `${label}${need > 0 ? ` (+${need})` : ''}`, () => {
+      const k = Math.min(target - P.crew, Math.floor(P.gold / 100));
+      if (k > 0) { P.gold -= k * 100; P.crew += k; save(); }
+      renderCrew();
+    }, need <= 0 || P.gold < 100);
+  };
+  hireTo(minC, 'Hire to minimum (必要水手)');
+  hireTo(maxC, 'Hire to maximum (最大水手)');
+  mkBtn(div, 'Dismiss to minimum (必要水手)', () => {
+    const k = P.crew - minC;
+    if (k > 0) { P.crew -= k; save(); }
+    renderCrew();
+  }, P.crew <= minC);
+}
+definePanel('crew', crewPanel, { building: true, render: renderCrew });
+
 // ---------------------------------------------------------------------------
 // Captain's Log (I): fleet / crew / outfit / hero / cargo / discoveries / quests
 // ---------------------------------------------------------------------------
@@ -3031,7 +3074,7 @@ const MENU_RENDER = {
   hero() {
     return `<p><b>${CHARACTER_NAMES[P.character]}</b>${fameTitle() ? ' · ' + fameTitle() : ''}</p>` +
       `<p>fame: ${P.fame} · gold: ${P.gold}g · bank: ${P.bank}g · days: ${P.days}</p>` +
-      `<p>provisions: ${Math.floor(P.provisions)} · vigor: ${100 - Math.floor(P.fatigue)}</p>` +
+      `<p>water: ${Math.floor(P.water)} · food: ${Math.floor(P.food)} · vigor: ${100 - Math.floor(P.fatigue)}</p>` +
       `<h3 style="color:#ffd94d;margin:8px 0 2px">hero</h3>` +
       `<p>lv ${P.hero.lv} · hp ${P.hero.hp}/${heroMaxHp()} · atk ${heroAtk()} · def ${heroDef()} · ` +
       `weapon t${P.hero.weapon} · armor t${P.hero.armor} · balms ${P.hero.balms}</p>` +
@@ -4239,14 +4282,17 @@ function tick() {
 
     // --- HUD ---
     const dailyDrain = (4 + P.crew * 0.25) * boatswainFactor();
-    const daysLeft = P.provisions > 0 ? Math.floor(P.provisions / dailyDrain) : 0;
+    const halfDrain = dailyDrain / 2;   // water & food each drain this per day
+    const waterDays = P.water > 0 ? Math.floor(P.water / halfDrain) : 0;
+    const foodDays = P.food > 0 ? Math.floor(P.food / halfDrain) : 0;
+    const daysLeft = Math.min(waterDays, foodDays);
     const minC = fleetMinCrew(), maxC = fleetMaxCrew();
     const crewLow = P.crew < minC;
     const crewTxt = crewLow ? `<span style="color:#ff5b4d;font-weight:bold">${P.crew}</span>` : `${P.crew}`;
     hudTop.innerHTML =
       `<b>${fmtLonLat(shipPos.x, shipPos.z)}</b> · day ${P.days}<br>` +
       `time: ${a} · speed: ${moving ? (curSpeed * 1.8).toFixed(1) : '0.0'} kn · gold: ${P.gold}g · hull: ${Math.ceil(flag().hull)}<br>` +
-      `food: ${Math.floor(P.provisions)} (${daysLeft}d)${daysLeft <= 2 ? ' <span style="color:#ff5b4d">⚠</span>' : ''}<br>` +
+      `water: ${Math.floor(P.water)} · food: ${Math.floor(P.food)} (${daysLeft}d)${daysLeft <= 2 ? ' <span style="color:#ff5b4d">⚠</span>' : ''}<br>` +
       `fatigue${hudBar(P.fatigue / 100, P.fatigue >= 90 ? '#ff5b4d' : P.fatigue >= 60 ? '#e6a23c' : '#5b8cff')} ${Math.floor(P.fatigue)}<br>` +
       `crew${hudBar(P.crew / maxC, crewLow ? '#ff5b4d' : '#5bff8c', minC / maxC)} ${crewTxt}/${maxC}`;
   } else if (scene === 'port') {
@@ -4346,7 +4392,7 @@ function tick() {
     hudTop.innerHTML =
       `<b>${CHARACTER_NAMES[P.character]}</b> lv ${P.hero.lv} · hp ${P.hero.hp}/${heroMaxHp()}<br>` +
       `exp ${P.hero.exp}/${P.hero.lv * 20} · day ${P.days}<br>` +
-      `<b>${fmtLonLat(landPos.x, landPos.z)}</b> · on foot · ${terrainAt(landPos.z)} · food ${Math.floor(P.provisions)}`;
+      `<b>${fmtLonLat(landPos.x, landPos.z)}</b> · on foot · ${terrainAt(landPos.z)} · water ${Math.floor(P.water)} · food ${Math.floor(P.food)}`;
   }
 
   // --- banner fade ---

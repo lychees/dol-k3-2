@@ -39,6 +39,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(1200)
 
     # --- market: buy 10 Wine at 36, sell back at 20 ---
+    page.evaluate("window.UW.P.water = 0; window.UW.P.food = 0")   # empty provisions to free the hold (cargo-shared)
     open_bld("market")
     click_btn("Trade goods")
     page.wait_for_timeout(400)
@@ -60,11 +61,11 @@ with sync_playwright() as p:
     page.keyboard.press("Escape")   # close building
     page.wait_for_timeout(300)
 
-    # --- harbor: provisions ---
-    page.evaluate("window.UW.P.provisions = 40")
+    # --- harbor: water/food (provisions split, cargo-shared) ---
+    page.evaluate("window.UW.P.water = 10; window.UW.P.food = 10")
     open_bld("harbor")
-    click_btn("Buy provisions")
-    check("provisions filled", page.evaluate("window.UW.P.provisions") == 100)
+    click_btn("Buy water")
+    check("water filled", page.evaluate("window.UW.P.water") > 10)
     page.keyboard.press("Escape"); page.wait_for_timeout(200)
 
     # --- inn: rest ---

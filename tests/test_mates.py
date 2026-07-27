@@ -31,15 +31,17 @@ with sync_playwright() as p:
         }}""")
         page.wait_for_timeout(300)
 
-    # --- bar: hire sailors ---
+    # --- bar: resupply sailors (sub-panel) ---
     page.evaluate("window.UW.enterPort(1)")
     page.wait_for_timeout(1200)
     page.evaluate("window.UW.P.gold = 100000; window.UW.save()")
     open_bld("bar")
-    page.click("#building-actions button:has-text('Hire sailors')")
+    page.click("#building-actions button:has-text('Resupply sailors')")
     page.wait_for_timeout(300)
-    check("hired 10 sailors (5->15)", page.evaluate("window.UW.P.crew") == 15
-          and page.evaluate("window.UW.P.gold") == 99000)
+    page.click("#crew-actions button:has-text('maximum')")
+    page.wait_for_timeout(300)
+    check("hired sailors to max (5->20)", page.evaluate("window.UW.P.crew") == 20
+          and page.evaluate("window.UW.P.gold") == 98500)
     page.keyboard.press("Escape"); page.wait_for_timeout(200)
 
     # --- bar: meet & hire mate (Lisbon id=1 odd -> none; Seville id=2 -> mate John) ---
