@@ -1917,7 +1917,7 @@ Object.defineProperty(P, 'fame', {
 });
 
 
-const flag = () => P.fleet[0];                      // flagship
+const flag = () => P.fleet[0] ?? { ship: 'Balsa', hull: 0 };   // flagship (or a dummy if no ship)
 const curShip = () => shipByName(flag().ship);      // flagship's type
 
 // effective stats of a fleet ship, including refit mods
@@ -1940,7 +1940,7 @@ const REFIT_CATS = [['guns', 'Extra cannons', '+20% guns / lv'],
 const REFIT_MAX_LV = 3;
 const refitCost = (f, cat) => Math.round(shipByName(f.ship).price * 0.2);
 
-const fleetCargoCap = () => P.fleet.reduce((a, f) => a + shipStats(f).cargo, 0);
+const fleetCargoCap = () => P.fleet.length ? P.fleet.reduce((a, f) => a + shipStats(f).cargo, 0) : 10;   // no ship -> small hold for provisions
 const fleetGuns = () => P.fleet.reduce((a, f) => a + shipStats(f).guns, 0);
 const fleetMinCrew = () => P.fleet.reduce((a, f) => a + shipByName(f.ship).minCrew, 0);
 const fleetMaxCrew = () => P.fleet.reduce((a, f) => a + shipByName(f.ship).maxCrew, 0);
@@ -2344,14 +2344,36 @@ function buildingMenu(b) {
       if (P.character === 6 && P.prologue && P.prologue.step === 3) {
         menu.unshift({ label: 'Board the merchant ship to Lisbon', action() {
           P.prologue.step = 4;   // prologue done
+          hideBuildingPanel();   // close the Harbor UI
           landExpedition = false;
-          scene = 'sea';
+          const faro = ports.find(p => p.id === 132);
           const lisbon = ports.find(p => p.id === 1);
-          const [sx, sz] = sailableNear(lisbon.x, lisbon.y);
-          shipPos.set(sx, 0, sz);
-          showBanner('To Lisbon!<small>your journey with Eudora and your companions begins</small>');
-          save();
+          merchantShipAnimation(faro, lisbon, () => {
+            const [sx, sz] = sailableNear(lisbon.x, lisbon.y);
+            shipPos.set(sx, 0, sz);
+            showBanner('To Lisbon!<small>your journey with Eudora and your companions begins</small>');
+            save();
+          });
         } });
+      }
+      // board a merchant ship (for players with no ship — travel between ports)
+      if (P.fleet.length === 0 && !(P.character === 6 && P.prologue && P.prologue.step < 4)) {
+        const here = ports.find(p => p.id === portId);
+        const nearby = ports.filter(p => p.id !== portId && (p.id <= 101 || p.id === 132) &&
+          Math.hypot(p.x - here.x, p.y - here.y) < 120).slice(0, 4);
+        for (const dest of nearby) {
+          menu.push({ label: `Board a merchant ship to ${dest.name}`, action() {
+            hideBuildingPanel();
+            merchantShipAnimation(here, dest, () => {
+              const [sx, sz] = sailableNear(dest.x, dest.y);
+              shipPos.set(sx, 0, sz);
+              enterPort(dest.id);
+              landExpedition = true;
+              portReturnPos = { x: dest.x + 0.5, z: dest.y + 0.5 };
+              save();
+            });
+          } });
+        }
       }
       if (landExpedition) {
         menu.push({ label: 'Leave the city (on foot)', action() { exitPortToLand(); } });
@@ -3313,6 +3335,22 @@ const MENU_RENDER = {
   },
   quests() {
     let html = '';
+    // Isabella prologue progress (Faro)
+    if (P.character === 6 && P.prologue && P.prologue.step < 4) {
+      const PROLOGUE_STEPS = [
+        'Lay flowers at your mother\'s grave (cemetery)',
+        'Say goodbye to your teacher',
+        'Go home and sleep',
+        'Board the merchant ship to Lisbon (harbor)',
+      ];
+      html += `<div class="story-box"><h3>⚑ Prologue — Faro</h3>`;
+      PROLOGUE_STEPS.forEach((name, i) => {
+        if (i < P.prologue.step) html += `<p class="story-done">✓ ${name}</p>`;
+        else if (i === P.prologue.step) html += `<p class="story-current">▶ ${name}</p>`;
+        else html += `<p class="story-future">· ${name}</p>`;
+      });
+      html += `</div><hr style="border-color:#2a3444">`;
+    }
     // main storyline progress (per hero)
     const s = STORYLINES[P.character];
     if (s) {
@@ -3401,6 +3439,24 @@ function makeShipMesh(row) {
   const mesh = makeSprite(shipTex, 1 / 8, 1 / 4);
   mesh.material.map.offset.set(0, (3 - row) / 4);
   return mesh;
+}
+
+// animate a small merchant ship sailing from one port to another (camera follows)
+function merchantShipAnimation(fromPort, toPort, onDone) {
+  scene = 'sea';   // show the world map
+  const mesh = makeShipMesh(0);   // a small ship
+  mesh.position.set(fromPort.x, 0.4, fromPort.y);
+  seaScene.add(mesh);
+  const start = performance.now();
+  const duration = 3000;
+  (function animate() {
+    const t = Math.min(1, (performance.now() - start) / duration);
+    mesh.position.x = fromPort.x + (toPort.x - fromPort.x) * t;
+    mesh.position.z = fromPort.y + (toPort.y - fromPort.y) * t;
+    shipPos.set(mesh.position.x, 0, mesh.position.z);   // camera follows the ship
+    if (t < 1) requestAnimationFrame(animate);
+    else { seaScene.remove(mesh); onDone(); }
+  })();
 }
 
 function spawnPirate(x, z, name, bountyName = null) {
@@ -4378,6 +4434,7 @@ document.getElementById('start-overlay').addEventListener('click', function (e) 
   // Isabella starts inside the Faro port with her prologue
   if (P.character === 6 && !P.prologue) {
     P.prologue = { step: 0 };
+    P.fleet = [];   // Isabella starts with no ship — she travels by boarding merchant ships
     const faro = ports.find(p => p.id === 132);
     const [sx, sz] = sailableNear(faro.x, faro.y);
     shipPos.set(sx, 0, sz);
