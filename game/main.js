@@ -973,9 +973,12 @@ function talkToMaid(maidId) {
 // ---------------------------------------------------------------------------
 const dialogPanel = document.getElementById('dialog-panel');
 
-function showDialog(name, text) {
+function showDialog(name, text, portraitUrl) {
   document.getElementById('dialog-name').textContent = name;
   document.getElementById('dialog-text').innerHTML = text;
+  const img = document.getElementById('dialog-portrait');
+  if (portraitUrl) { img.src = portraitUrl; img.style.display = 'block'; }
+  else { img.style.display = 'none'; }
   openPanel('dialog');
 }
 definePanel('dialog', dialogPanel);
@@ -983,21 +986,23 @@ const closeDialog = () => closePanel('dialog');
 
 function npcDialog(npc) {
   const kind = npc.kind;
+  // wanderers (man/woman) have a Jephed charIdx -> show their portrait
+  const portrait = (npc.charIdx !== undefined) ? npcPortraitUrl(npc.charIdx) : null;
   if (kind === 'man') {
     const p = ports[Math.floor(Math.random() * ports.length)];
-    showDialog('Sailor', `"Have you been to <b>${p.name}</b>?"`);
+    showDialog('Sailor', `"Have you been to <b>${p.name}</b>?"`, portrait);
   } else if (kind === 'woman') {
-    showDialog('Townswoman', '"Do you like this place? ... How about me?"');
+    showDialog('Townswoman', '"Do you like this place? ... How about me?"', portrait);
   } else if (kind === 'dog') {
-    showDialog('Dog', 'Woof! Woof!');
+    showDialog('Dog', 'Woof! Woof!', portrait);
   } else if (kind === 'oldman') {
     const unknown = villages.filter(v => !discoveriesFound.has(v.id));
     if (unknown.length && Math.random() < 0.6) {
       const v = unknown[Math.floor(Math.random() * unknown.length)];
       showDialog('Old man', `"Cherish your time, kid. I was like you many years ago…<br>` +
-        `Say — they say there's something strange at <b>${fmtLonLat(v.x, v.y)}</b>."`);
+        `Say — they say there's something strange at <b>${fmtLonLat(v.x, v.y)}</b>."`, portrait);
     } else {
-      showDialog('Old man', '"Cherish your time, kid. I was like you many years ago."');
+      showDialog('Old man', '"Cherish your time, kid. I was like you many years ago."', portrait);
     }
   } else if (kind === 'agent') {
     const spec = goodsData.specialties[portId];
@@ -1012,14 +1017,14 @@ function npcDialog(npc) {
       }
       showDialog('Agent', `"Here! We have everything you can imagine!<br>` +
         `Our specialty is <b>${spec.name}</b> (buy: ${spec.price}g). ` +
-        (best ? `They pay much more for it in <b>${best}</b>."` : '"'));
+        (best ? `They pay much more for it in <b>${best}</b>."` : '"'), portrait);
     } else {
-      showDialog('Agent', '"Here! We have everything you can imagine!"');
+      showDialog('Agent', '"Here! We have everything you can imagine!"', portrait);
     }
   } else if (kind === 'guard') {
     showDialog('Guard', P.fame >= 5
       ? `"Good day, ${fameTitle()}. The governor speaks well of you."`
-      : '"Halt! State your business. …Move along, sailor."');
+      : '"Halt! State your business. …Move along, sailor."', portrait);
   }
 }
 
@@ -1867,6 +1872,24 @@ function figureUrl(x, y) {
                              0, 0, 65, 81);
   const url = c.toDataURL();
   figureCache.set(key, url);
+  return url;
+}
+
+// NPC dialog portrait: front-facing sprite cropped from npc_atlas.png (Jephed pack)
+const npcAtlasImg = new Image();
+npcAtlasImg.src = './assets/npc_atlas.png';
+const npcPortraitCache = new Map();
+function npcPortraitUrl(charIdx) {
+  if (npcPortraitCache.has(charIdx)) return npcPortraitCache.get(charIdx);
+  const c = document.createElement('canvas');
+  c.width = 60; c.height = 90;
+  const g = c.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  // front ('down') walk frame 0: 20x32 at ((charIdx%8)*64, floor(charIdx/8)*128)
+  const sx = (charIdx % 8) * 64, sy = Math.floor(charIdx / 8) * 128;
+  g.drawImage(npcAtlasImg, sx, sy, 20, 32, 0, 0, 60, 90);
+  const url = c.toDataURL();
+  npcPortraitCache.set(charIdx, url);
   return url;
 }
 

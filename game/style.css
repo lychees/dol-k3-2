@@ -85,7 +85,7 @@ canvas { display: block; }
             user-select: none; pointer-events: none; }
 
 /* ---------- panels (DOS gold-frame chrome) ---------- */
-.panel { position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%);
+.panel { position: fixed; left: 50%; top: 50%; transform: translate(var(--ptx, -50%), var(--pty, -50%));
          z-index: 8; background: var(--bg-panel); color: var(--ink);
          text-align: center; max-width: 560px; display: none;
          padding: 22px 30px; border-radius: var(--radius-l);
@@ -101,8 +101,8 @@ canvas { display: block; }
 .panel .close-hint { font-size: var(--fs-caption); color: var(--ink-dim); margin-top: 10px; }
 
 @keyframes panelIn {
-  from { opacity: 0; transform: translate(-50%,-50%) scale(.96); }
-  to   { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+  from { opacity: 0; transform: translate(var(--ptx, -50%), var(--pty, -50%)) scale(.96); }
+  to   { opacity: 1; transform: translate(var(--ptx, -50%), var(--pty, -50%)) scale(1); }
 }
 
 /* ---------- buttons ---------- */
@@ -244,6 +244,15 @@ canvas { display: block; }
 #gameover-overlay button:hover { background: #2a2a2a; }
 
 @keyframes pulse { 50% { opacity: .35; } }
+
+/* ---------- dialog ---------- */
+#dialog-panel { --pty: 0; }
+.dialog-body { display: flex; gap: 14px; align-items: flex-start; text-align: left; }
+#dialog-portrait { width: 60px; height: 90px; image-rendering: pixelated;
+                   border: 1px solid var(--bronze); border-radius: var(--radius-s);
+                   background: #000; flex-shrink: 0; margin: 0; }
+.dialog-main { flex: 1; min-width: 0; }
+.dialog-main h2 { margin-top: 0; }
 
 /* ---------- utilities ---------- */
 .key { display: inline-block; border: 1px solid var(--bronze); border-radius: var(--radius-s);
