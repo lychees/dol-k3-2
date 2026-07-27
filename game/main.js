@@ -689,6 +689,7 @@ async function enterPort(pid) {
   portScene.add(portWorld.mesh);
 
   portId = pid;
+  P.lastPort = pid;   // remember the last port visited (for no-ship reload)
   portDevOf(pid);   // initialize development stats on arrival
   portWalkMax = mapIdx >= 94 ? PORT_WALK_MAX_ASIA : PORT_WALK_MAX;
   portBuildings = Object.entries(meta.buildings)
@@ -1834,6 +1835,7 @@ let P = {
   hero: { lv: 1, exp: 0, hp: 28, sp: 20, weapon: 0, armor: 0, balms: 0 },
   mateSp: {},                           // mateId -> current sp
   supplyRatio: 50,                      // harbor resupply water:food ratio (water %)
+  lastPort: null,                       // last port visited (for no-ship reload)
   mateHp: {},                       // mate id -> current hp (land battles)
   telescope: false, discoveryQuest: null, deliveryQuest: null,
   palaceMilestone: 0, days: 0, discoveries: [], portsFound: [],
@@ -1847,6 +1849,17 @@ try {
   const s = JSON.parse(localStorage.getItem(SAVE_KEY));
   if (s && typeof s === 'object') P = { ...P, ...s };
 } catch { /* fresh game */ }
+// with no ship the player can't be at sea — restore to the last port instead
+if (P.fleet.length === 0 && P.lastPort) {
+  const lp = ports.find(p => p.id === P.lastPort);
+  if (lp) {
+    const [sx, sz] = sailableNear(lp.x, lp.y);
+    shipPos.set(sx, 0.4, sz);
+    enterPort(P.lastPort);
+    landExpedition = true;
+    portReturnPos = { x: lp.x + 0.5, z: lp.y + 0.5 };
+  }
+}
 // randomizer injections for a fresh randomized game
 if (randoSummary?.mapStructure) {
   // towns & ruins must sit on the new land
@@ -2336,11 +2349,11 @@ function buildingMenu(b) {
     }
     case 'harbor': {
       const menu = [
-        { label: 'Resupply (fill up)', action() { openPanel('supply'); } },
-        { label: 'Buy water +50 (50g)', cost: 50, disabled: cargoSpace() < 1,
+        { label: 'Resupply (fill up)', disabled: P.fleet.length === 0, action() { openPanel('supply'); } },
+        { label: 'Buy water +50 (50g)', cost: 50, disabled: P.fleet.length === 0 || cargoSpace() < 1,
           action() { const n = Math.min(50, cargoSpace()); P.gold -= n; P.water += n;
                      setBuildingText(`Fresh water loaded (+${n}). The crew is ready.`); } },
-        { label: 'Buy food +50 (50g)', cost: 50, disabled: cargoSpace() < 1,
+        { label: 'Buy food +50 (50g)', cost: 50, disabled: P.fleet.length === 0 || cargoSpace() < 1,
           action() { const n = Math.min(50, cargoSpace()); P.gold -= n; P.food += n;
                      setBuildingText(`Rations stowed aboard (+${n}). The crew is ready.`); } },
       ];
@@ -4123,13 +4136,23 @@ const DEV_RENDER = {
     return html;
   },
   discoveries() {
+    const SUBJECT_LABEL = { archaeology: '考古', geography: '地理', treasure: '财宝',
+                            religion: '宗教', biology: '生物', art: '艺术' };
     let html = `<p>${discoveriesFound.size} / ${villages.length} discovered</p>`;
-    for (const v of villages) {
-      const found = discoveriesFound.has(v.id);
-      html += `<div class="mate-card"><canvas class="disc-thumb" data-img="${v.img[0]},${v.img[1]}" ` +
-        `width="49" height="49" style="image-rendering:pixelated;border:1px solid #8a6d3b;border-radius:3px"></canvas>` +
-        `<div class="mate-stats"><b>${v.name}</b>${found ? ' ★' : ''} · ${fmtLonLat(v.x, v.y)}<br>` +
-        `${v.desc.slice(0, 90)}…</div></div>`;
+    // group discoveries by subject (6 disciplines)
+    const groups = {};
+    for (const v of villages) (groups[v.subject] = groups[v.subject] ?? []).push(v);
+    for (const [subj, label] of Object.entries(SUBJECT_LABEL)) {
+      const list = groups[subj];
+      if (!list) continue;
+      html += `<h3 style="color:#ffd94d;margin:8px 0 2px">${label} (${list.length})</h3>`;
+      for (const v of list) {
+        const found = discoveriesFound.has(v.id);
+        html += `<div class="mate-card"><canvas class="disc-thumb" data-img="${v.img[0]},${v.img[1]}" ` +
+          `width="49" height="49" style="image-rendering:pixelated;border:1px solid #8a6d3b;border-radius:3px"></canvas>` +
+          `<div class="mate-stats"><b>${v.name}</b>${found ? ' ★' : ''} · ${fmtLonLat(v.x, v.y)}<br>` +
+          `${v.desc.slice(0, 90)}…</div></div>`;
+      }
     }
     return html;
   },
@@ -4595,7 +4618,7 @@ function tick() {
     const crewTxt = crewLow ? `<span style="color:#ff5b4d;font-weight:bold">${P.crew}</span>` : `${P.crew}`;
     hudTop.innerHTML =
       `<b>${fmtLonLat(shipPos.x, shipPos.z)}</b> · day ${P.days}<br>` +
-      `time: ${a} · speed: ${moving ? (curSpeed * 1.8).toFixed(1) : '0.0'} kn · gold: ${P.gold}g · hull: ${Math.ceil(flag().hull)}<br>` +
+      `time: ${a} · speed: ${moving ? (curSpeed * 1.8).toFixed(1) : '0.0'} kn · gold: ${P.gold}g · ${P.fleet.length ? `hull: ${Math.ceil(flag().hull)}` : 'no ship'}<br>` +
       `water: ${Math.floor(P.water)} · food: ${Math.floor(P.food)} (${daysLeft}d)${daysLeft <= 2 ? ' <span style="color:#ff5b4d">⚠</span>' : ''}<br>` +
       `fatigue${hudBar(P.fatigue / 100, P.fatigue >= 90 ? '#ff5b4d' : P.fatigue >= 60 ? '#e6a23c' : '#5b8cff')} ${Math.floor(P.fatigue)}<br>` +
       `crew${hudBar(P.crew / maxC, crewLow ? '#ff5b4d' : '#5bff8c', minC / maxC)} ${crewTxt}/${maxC}`;
@@ -4644,7 +4667,7 @@ function tick() {
     hudTop.innerHTML =
       `<b>${portName}</b> · day ${P.days}<br>` +
       `time: ${a} · gold: ${P.gold}g<br>` +
-      `fame: ${P.fame}${fameTitle() ? ' · ' + fameTitle() : ''} · ${curShip().name}${P.fleet.length > 1 ? ' +' + (P.fleet.length - 1) : ''}`;
+      `fame: ${P.fame}${fameTitle() ? ' · ' + fameTitle() : ''} · ${P.fleet.length ? curShip().name + (P.fleet.length > 1 ? ' +' + (P.fleet.length - 1) : '') : 'no ship'}`;
   }
 
   else {
