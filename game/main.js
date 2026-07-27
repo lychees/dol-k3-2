@@ -727,6 +727,10 @@ function setSail() {
     showBanner('Your ship is anchored off the coast<small>leave the city on foot and press L near your ship to re-board</small>');
     return;
   }
+  if (P.fleet.length === 0) {
+    showBanner('You have no ship<small>travel by boarding a merchant ship at the harbor, or leave the city on foot</small>');
+    return;
+  }
   scene = 'sea';
   inBuilding = null;
   quickbar.style.display = 'none';
@@ -2343,7 +2347,7 @@ function buildingMenu(b) {
       // Isabella prologue: board the merchant ship to Lisbon
       if (P.character === 6 && P.prologue && P.prologue.step === 3) {
         menu.unshift({ label: 'Board the merchant ship to Lisbon', action() {
-          P.prologue.step = 4;   // prologue done
+          P.prologue.step = 4;   // next: greet the Duke at the MSC
           hideBuildingPanel();   // close the Harbor UI
           landExpedition = false;
           const faro = ports.find(p => p.id === 132);
@@ -2351,7 +2355,8 @@ function buildingMenu(b) {
           merchantShipAnimation(faro, lisbon, () => {
             const [sx, sz] = sailableNear(lisbon.x, lisbon.y);
             shipPos.set(sx, 0, sz);
-            showBanner('To Lisbon!<small>your journey with Eudora and your companions begins</small>');
+            enterPort(1);   // arrive in Lisbon
+            showBanner('To Lisbon!<small>go to the Duke\'s mansion (MSC) to greet your father</small>');
             save();
           });
         } });
@@ -2367,9 +2372,7 @@ function buildingMenu(b) {
             merchantShipAnimation(here, dest, () => {
               const [sx, sz] = sailableNear(dest.x, dest.y);
               shipPos.set(sx, 0, sz);
-              enterPort(dest.id);
-              landExpedition = true;
-              portReturnPos = { x: dest.x + 0.5, z: dest.y + 0.5 };
+              enterPort(dest.id);   // arrive at the destination port by sea (not on foot)
               save();
             });
           } });
@@ -2600,6 +2603,18 @@ function buildingMenu(b) {
       ];
     }
     case 'msc': {
+      // Isabella prologue: greet the Duke (her father)
+      if (P.character === 6 && P.prologue && P.prologue.step === 4) {
+        return [{ label: 'Greet your father, Duke Leon Franco', action() {
+          P.prologue.step = 5;   // prologue done
+          showDialog('Duke Leon Franco',
+            '"Isabella… my daughter. You\'ve grown so much since I last saw you as a child.<br><br>' +
+            'I heard about your mother. I\'m so sorry — I should have been there for you both.<br><br>' +
+            '<i>(You want to tell him how he neglected you and mother all these years… but you hold your tongue.)</i>',
+            DOS_PORTRAIT[6]);
+          save();
+        } }];
+      }
       if (P.discoveryQuest) {
         if (discoveriesFound.has(P.discoveryQuest)) {
           const v = villages.find(x => x.id === P.discoveryQuest);
@@ -3335,13 +3350,14 @@ const MENU_RENDER = {
   },
   quests() {
     let html = '';
-    // Isabella prologue progress (Faro)
-    if (P.character === 6 && P.prologue && P.prologue.step < 4) {
+    // Isabella prologue progress (Faro -> Lisbon)
+    if (P.character === 6 && P.prologue && P.prologue.step < 5) {
       const PROLOGUE_STEPS = [
         'Lay flowers at your mother\'s grave (cemetery)',
         'Say goodbye to your teacher',
         'Go home and sleep',
         'Board the merchant ship to Lisbon (harbor)',
+        'Greet your father, the Duke (MSC in Lisbon)',
       ];
       html += `<div class="story-box"><h3>⚑ Prologue — Faro</h3>`;
       PROLOGUE_STEPS.forEach((name, i) => {
