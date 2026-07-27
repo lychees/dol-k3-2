@@ -1401,7 +1401,7 @@ function gainFame(type, n) {
   P[type] += n;
   const key = type.replace('Fame', '');   // navalFame -> naval
   for (const id of P.mates) {
-    P.mateFame[id] = P.mateFame[id] ?? { naval: 0, trade: 0, adventure: 0 };
+    P.mateFame[id] = P.mateFame[id] ?? { naval: 0, trade: 0, adventure: 0, notoriety: 0 };
     P.mateFame[id][key] = (P.mateFame[id][key] ?? 0) + 1;
   }
 }
@@ -3131,31 +3131,36 @@ const MENU_RENDER = {
   party() {
     // character selector: protagonist + mates. Click to select, view full stats.
     const sel = window._partySel;
-    const btn = (key, label) =>
-      `<button class="${sel === key ? 'active' : ''}" style="display:block;width:100%;margin:2px 0" onclick="selectParty('${key}')">${label}</button>`;
-    let html = '<div style="display:flex;gap:16px;text-align:left"><div style="min-width:150px">';
-    html += btn('hero', CHARACTER_NAMES[P.character]);
-    P.mates.forEach(id => { html += btn('mate' + id, matesData[id].name); });
+    const btn = (key, label, imgUrl) =>
+      `<button class="${sel === key ? 'active' : ''}" style="display:flex;align-items:center;gap:6px;width:100%;margin:2px 0;text-align:left" onclick="selectParty('${key}')">` +
+      `<img src="${imgUrl}" style="width:32px;height:32px;object-fit:cover;border-radius:3px;image-rendering:pixelated;border:1px solid var(--bronze)">` +
+      `<span>${label}</span></button>`;
+    // 4 fame values on one line, boxed, labeled 名声
+    const fameBox = (naval, trade, adventure, notoriety) =>
+      `<div style="border:1px solid var(--bronze);border-radius:6px;padding:4px 10px;margin:4px 0">` +
+      `<small style="color:var(--gold)">名声</small> naval: ${naval} · trade: ${trade} · adventure: ${adventure} · ` +
+      `<span style="color:#f87171">notoriety: ${notoriety}</span></div>`;
+    let html = '<div style="display:flex;gap:16px;text-align:left"><div style="min-width:180px">';
+    html += btn('hero', CHARACTER_NAMES[P.character], DOS_PORTRAIT[P.character]);
+    P.mates.forEach(id => { html += btn('mate' + id, matesData[id].name, matePortraitUrl(matesData[id])); });
     html += '</div><div style="flex:1">';
     if (sel === 'hero') {
       const a = HERO_ATTRS[P.character];
       html += `<p><b>${CHARACTER_NAMES[P.character]}</b> · ${HERO_NATION[P.character]}${fameTitle() ? ' · ' + fameTitle() : ''}</p>` +
-        `<p>naval: ${P.navalFame} · trade: ${P.tradeFame} · adventure: ${P.adventureFame} · <span style="color:#f87171">notoriety: ${P.notoriety}</span></p>` +
+        fameBox(P.navalFame, P.tradeFame, P.adventureFame, P.notoriety) +
         `<p>str ${a.str} · agi ${a.agi} · con ${a.con} · int ${a.int} · per ${a.per} · cha ${a.cha}</p>` +
-        `<p>hp${hudBar(P.hero.hp / heroMaxHp(), '#5bff8c')} ${P.hero.hp}/${heroMaxHp()}</p>` +
-        `<p>sp${hudBar(P.hero.sp / heroMaxSp(), '#5b8cff')} ${P.hero.sp}/${heroMaxSp()}</p>`;
+        `<p>hp${hudBar(P.hero.hp / heroMaxHp(), '#5bff8c')} ${P.hero.hp}/${heroMaxHp()} · sp${hudBar(P.hero.sp / heroMaxSp(), '#5b8cff')} ${P.hero.sp}/${heroMaxSp()}</p>`;
     } else {
       const id = +sel.slice(4);
       const m = matesData[id];
       const a = mateAttrs(id);
-      const f = P.mateFame[id] ?? { naval: 0, trade: 0, adventure: 0 };
+      const f = P.mateFame[id] ?? { naval: 0, trade: 0, adventure: 0, notoriety: 0 };
       const hp = mateHpOf(id), maxHp = mateMaxHp(id);
       const sp = P.mateSp[id] ?? mateMaxSp(id), maxSp = mateMaxSp(id);
       html += `<p><b>${m.name}</b> · ${m.nation} · lv ${m.lv}</p>` +
-        `<p>naval: ${f.naval} · trade: ${f.trade} · adventure: ${f.adventure}</p>` +
+        fameBox(f.naval, f.trade, f.adventure, f.notoriety ?? 0) +
         `<p>str ${a.str} · agi ${a.agi} · con ${a.con} · int ${a.int} · per ${a.per} · cha ${a.cha}</p>` +
-        `<p>hp${hudBar(hp / maxHp, '#5bff8c')} ${hp}/${maxHp}</p>` +
-        `<p>sp${hudBar(sp / maxSp, '#5b8cff')} ${sp}/${maxSp}</p>`;
+        `<p>hp${hudBar(hp / maxHp, '#5bff8c')} ${hp}/${maxHp} · sp${hudBar(sp / maxSp, '#5b8cff')} ${sp}/${maxSp}</p>`;
     }
     return html + '</div></div>';
   },
@@ -3203,13 +3208,17 @@ const MENU_RENDER = {
   },
   hero() {
     const a = HERO_ATTRS[P.character];
+    const fameBox = (naval, trade, adventure, notoriety) =>
+      `<div style="border:1px solid var(--bronze);border-radius:6px;padding:4px 10px;margin:4px 0">` +
+      `<small style="color:var(--gold)">名声</small> naval: ${naval} · trade: ${trade} · adventure: ${adventure} · ` +
+      `<span style="color:#f87171">notoriety: ${notoriety}</span></div>`;
     return `<p><b>${CHARACTER_NAMES[P.character]}</b> · ${HERO_NATION[P.character]}${fameTitle() ? ' · ' + fameTitle() : ''}</p>` +
-      `<p>naval: ${P.navalFame} · trade: ${P.tradeFame} · adventure: ${P.adventureFame} · <span style="color:#f87171">notoriety: ${P.notoriety}</span></p>` +
+      fameBox(P.navalFame, P.tradeFame, P.adventureFame, P.notoriety) +
       `<p>str ${a.str} · agi ${a.agi} · con ${a.con} · int ${a.int} · per ${a.per} · cha ${a.cha}</p>` +
+      `<p>hp${hudBar(P.hero.hp / heroMaxHp(), '#5bff8c')} ${P.hero.hp}/${heroMaxHp()} · sp${hudBar(P.hero.sp / heroMaxSp(), '#5b8cff')} ${P.hero.sp}/${heroMaxSp()}</p>` +
       `<p>gold: ${P.gold}g · bank: ${P.bank}g · days: ${P.days} · water: ${Math.floor(P.water)} · food: ${Math.floor(P.food)} · vigor: ${100 - Math.floor(P.fatigue)}</p>` +
       `<h3 style="color:#ffd94d;margin:8px 0 2px">hero</h3>` +
-      `<p>lv ${P.hero.lv} · hp ${P.hero.hp}/${heroMaxHp()} · atk ${heroAtk()} · def ${heroDef()} · ` +
-      `weapon t${P.hero.weapon} · armor t${P.hero.armor} · balms ${P.hero.balms}</p>` +
+      `<p>lv ${P.hero.lv} · atk ${heroAtk()} · def ${heroDef()} · weapon t${P.hero.weapon} · armor t${P.hero.armor} · balms ${P.hero.balms}</p>` +
       `<h3 style="color:#ffd94d;margin:8px 0 2px">personal items</h3>` +
       `<p>${P.telescope ? '★ Telescope — discovery sight x2' : 'no special items yet (try the item shop)'}</p>`;
   },
