@@ -1857,12 +1857,17 @@ const battleDmg = () => fleetGuns() / 4 * gunBonus() * (crewOk() ? 1 : 0.5);
 // figure portrait: 65x81 cell from figures.png
 const figuresImg = new Image();
 figuresImg.src = './assets/figures.png';
+const figureCache = new Map();
 function figureUrl(x, y) {
+  const key = x + ',' + y;
+  if (figureCache.has(key)) return figureCache.get(key);
   const c = document.createElement('canvas');
   c.width = 65; c.height = 81;
   c.getContext('2d').drawImage(figuresImg, (x - 1) * 65 + 3, (y - 1) * 81 + 3, 59, 75,
                              0, 0, 65, 81);
-  return c.toDataURL();
+  const url = c.toDataURL();
+  figureCache.set(key, url);
+  return url;
 }
 
 // discoveries / found ports live in Sets, mirrored into P on save
@@ -3827,17 +3832,33 @@ window.UW = {
   reset: () => { localStorage.removeItem(SAVE_KEY); location.reload(); },
 };
 
-// character selection on the start overlay
+// character selection on the start overlay (DOS large portraits from OPGRAPH)
 {
   const picker = document.getElementById('char-select');
+  // recolored DOS portraits (Ali cropped from the DOS char-select screen)
+  const DOS_PORTRAIT = {
+    0: './assets/dos/hero_hero_b1.png',   // João
+    1: './assets/dos/hero_catalina.png',  // Catalina
+    2: './assets/dos/hero_otto.png',      // Otto
+    3: './assets/dos/hero_hero_b2.png',   // Ernst
+    4: './assets/dos/hero_hero_b3.png',   // Pietro
+    5: './assets/dos/hero_ali.png',       // Ali
+  };
   CHARACTER_NAMES.forEach((name, ci) => {
-    const c = document.createElement('canvas');
-    c.width = c.height = 64;
+    let c;
+    if (DOS_PORTRAIT[ci]) {
+      c = document.createElement('img');
+      c.src = DOS_PORTRAIT[ci];
+      c.alt = name;
+    } else {
+      c = document.createElement('canvas');
+      c.width = c.height = 64;
+      const g = c.getContext('2d');
+      g.imageSmoothingEnabled = false;
+      g.drawImage(heroesTex.image, 4 * 68, ci * 68, 68, 68, 0, 0, 64, 64);
+    }
     c.className = 'char-portrait' + (ci === P.character ? ' selected' : '');
     c.title = name;
-    const g = c.getContext('2d');
-    g.imageSmoothingEnabled = false;
-    g.drawImage(heroesTex.image, 4 * 68, ci * 68, 68, 68, 0, 0, 64, 64);
     c.onclick = () => {
       P.character = ci;
       picker.querySelectorAll('.char-portrait').forEach(x => x.classList.remove('selected'));
