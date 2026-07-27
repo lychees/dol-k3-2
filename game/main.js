@@ -449,6 +449,18 @@ let personDir = 'down';
 // cols per character: up 0-1, left 2-3, down 4-5, right 6-7
 const CHARACTER_NAMES = ['João Ferrero', 'Catalina Erantzo', 'Otto Baynes',
                          'Ernst Von Bohr', 'Pietro Conti', 'Ali Vezas', 'Isabella'];
+// hero nationalities (index matches CHARACTER_NAMES)
+const HERO_NATION = ['Portugal', 'Spain', 'England', 'Holland', 'Italy', 'Turkey', 'Portugal'];
+// hero CRPG base attributes {str, agi, con, int, per, cha} (3-18), themed per character
+const HERO_ATTRS = [
+  { str: 12, agi: 12, con: 12, int: 12, per: 12, cha: 14 },  // João — balanced leader
+  { str: 14, agi: 14, con: 12, int: 10, per: 12, cha: 12 },  // Catalina — fierce pirate
+  { str: 15, agi: 11, con: 14, int: 10, per: 10, cha: 13 },  // Otto — stalwart knight
+  { str: 9, agi: 11, con: 10, int: 16, per: 14, cha: 10 },   // Ernst — brilliant geographer
+  { str: 12, agi: 13, con: 12, int: 11, per: 14, cha: 11 },  // Pietro — lucky treasure hunter
+  { str: 10, agi: 12, con: 11, int: 13, per: 12, cha: 15 },  // Ali — charming merchant
+  { str: 8, agi: 11, con: 10, int: 16, per: 13, cha: 12 },   // Isabella — scholar
+];
 
 // Main storylines — one per hero, 5 chapters each. check() = completion condition,
 // progress() = "cur/goal" text, reward = gold, text = narrative beat on completion.
@@ -1102,7 +1114,7 @@ function talkToMaid(maidId) {
       }
     } },
     { label: 'Tell her a story', action() {
-      P.fame += Math.random() < 0.3 ? 1 : 0;
+      P.adventureFame += Math.random() < 0.3 ? 1 : 0;
       setBuildingText(`<img src="${img}" style="width:65px;height:81px;image-rendering:pixelated"><br>` +
         `<b>${maid.name}</b>: "Wow! Interesting… tell me another one sometime, captain."`);
     } },
@@ -1354,7 +1366,7 @@ const LAND_MONSTERS = [
 let landBattle = null;    // {enemy, log[], round}
 let encounterT = 2;       // seconds of walking before next possible encounter
 
-const heroMaxHp = () => 20 + 8 * P.hero.lv;
+const heroMaxHp = () => 20 + 8 * P.hero.lv + HERO_ATTRS[P.character].con * 2;
 // apply pending hero level-ups from stored exp; log each one to `logArr`
 function heroLevelUps(logArr) {
   while (P.hero.exp >= P.hero.lv * 20) {
@@ -1364,11 +1376,24 @@ function heroLevelUps(logArr) {
     logArr.push(`Level up! ${CHARACTER_NAMES[P.character]} is now lv ${P.hero.lv}!`);
   }
 }
-const heroAtk = () => Math.max(1, Math.round((4 + 2 * P.hero.lv + [0, 4, 8, 14][P.hero.weapon]) * (P.fatigue >= 90 ? 0.75 : 1)));
+const heroAtk = () => Math.max(1, Math.round((4 + 2 * P.hero.lv + [0, 4, 8, 14][P.hero.weapon] + Math.floor(HERO_ATTRS[P.character].str / 5)) * (P.fatigue >= 90 ? 0.75 : 1)));
 const heroDef = () => Math.floor(P.hero.lv / 2) + [0, 2, 5, 9][P.hero.armor];
-const mateMaxHp = id => 15 + 5 * (matesData[id]?.lv ?? 1);
-const mateAtk = id => 3 + (matesData[id]?.lv ?? 1) + Math.floor((matesData[id]?.swordplay ?? 0) / 20);
+const mateMaxHp = id => 15 + 5 * (matesData[id]?.lv ?? 1) + Math.floor(mateAttrs(id).con / 3);
+const mateAtk = id => 3 + (matesData[id]?.lv ?? 1) + Math.floor((matesData[id]?.swordplay ?? 0) / 20) + Math.floor(mateAttrs(id).str / 5);
 const mateDef = id => Math.floor((matesData[id]?.lv ?? 1) / 3);
+// derive a mate's CRPG base attributes {str,agi,con,int,per,cha} (3-18) from their stats
+const mateAttrs = id => {
+  const m = matesData[id] ?? {};
+  const s = v => 3 + Math.round((v ?? 0) / 100 * 15);   // 0-100 -> 3-18
+  return {
+    str: s(((m.courage ?? 0) + (m.swordplay ?? 0)) / 2),
+    agi: s(m.seamanship),
+    con: s((m.lv ?? 1) * 10),
+    int: s(m.knowledge),
+    per: s(m.intuition),
+    cha: s(m.leadership),
+  };
+};
 const mateHpOf = id => P.mateHp[id] ?? mateMaxHp(id);
 
 function landAt(x, z) {   // walkable for a person: land tiles (not sailable water)
@@ -1515,7 +1540,7 @@ function endLandBattle(won) {
     const cb = bt.onEnd;
     // level ups
     heroLevelUps(bt.log);
-    P.fame += 1;
+    P.navalFame += 1;
     bt.over = true;
     save();
     setTimeout(() => { closeLandBattle(); cb?.(true); }, 1600);
@@ -1737,7 +1762,7 @@ function ruinTreasure() {
   P.gold += g;
   P.hero.exp += exp;
   heroLevelUps(ruin.log);
-  P.fame += 2;
+  P.adventureFame += 2;
   P.ruinCd = P.ruinCd ?? {};
   P.ruinCd[r.id] = P.days;
   ruin.log.push(`Deep in the sanctum you find the treasure of ${r.name}: ${g}g and ${exp} exp! fame +2`);
@@ -1781,7 +1806,8 @@ const TITLES = [[50, 'Duke'], [40, 'Marquis'], [30, 'Earl'], [20, 'Viscount'],
 
 const SAVE_KEY = 'uw-save-v1';
 let P = {
-  gold: 1000, fame: 0, water: 15, food: 15, fatigue: 0,
+  gold: 1000, water: 15, food: 15, fatigue: 0,
+  navalFame: 0, tradeFame: 0, adventureFame: 0, notoriety: 0,   // split fame + infamy
   fleet: [{ ship: 'Balsa', hull: 60 }],   // up to 5 ships; [0] = flagship
   cargo: {}, cargoCost: {}, bank: 0,
   crew: 5, mates: [],
@@ -1853,6 +1879,22 @@ P.food = P.food ?? 15;
 Object.defineProperty(P, 'provisions', {
   get: () => Math.min(P.water, P.food),
   set: v => { P.water = v; P.food = v; },
+  configurable: true,
+});
+
+// migrate fame -> naval/trade/adventure (split into three fame types)
+if (P.fame !== undefined) {
+  if (P.adventureFame === undefined) P.adventureFame = P.fame;   // old single fame -> adventure
+  delete P.fame;
+}
+P.navalFame = P.navalFame ?? 0;
+P.tradeFame = P.tradeFame ?? 0;
+P.adventureFame = P.adventureFame ?? 0;
+P.notoriety = P.notoriety ?? 0;
+// backward-compat alias: P.fame = naval + trade + adventure (storyline/fameTitle/tests use it)
+Object.defineProperty(P, 'fame', {
+  get: () => P.navalFame + P.tradeFame + P.adventureFame,
+  set: v => { P.adventureFame = v; P.navalFame = 0; P.tradeFame = 0; },
   configurable: true,
 });
 
@@ -2345,7 +2387,7 @@ function buildingMenu(b) {
           action() {
             P.palaceMilestone = next;
             const reward = next * 100;
-            P.gold += reward; P.fame += 2;
+            P.gold += reward; P.adventureFame += 2;
             setBuildingText(`The governor commends your voyages: <b>${fameTitle()}</b>! Royal reward: ${reward}g.`);
           } },
         { label: 'Pay respects', action() {
@@ -2363,7 +2405,7 @@ function buildingMenu(b) {
         const target = ports.find(p => p.id === q.port);
         if (q.port === portId) return [
           { label: `Deliver the letter (+${q.reward}g)`, action() {
-            P.gold += q.reward; P.fame += 3; P.jobQuest = null;
+            P.gold += q.reward; P.tradeFame += 3; P.jobQuest = null;
             setBuildingText(`Letter delivered! Payment: ${q.reward}g. The guild thanks you.`);
           } },
         ];
@@ -2377,7 +2419,7 @@ function buildingMenu(b) {
             P.cargo[q.good] -= q.qty;
             P.cargoCost[q.good] = (P.cargoCost[q.good] ?? 0) * P.cargo[q.good] / have;
             if (!P.cargo[q.good]) { delete P.cargo[q.good]; delete P.cargoCost[q.good]; }
-            P.gold += q.reward; P.fame += 3; P.jobQuest = null;
+            P.gold += q.reward; P.tradeFame += 3; P.jobQuest = null;
             setBuildingText(`The guild inspects the ${q.good} and pays ${q.reward}g on the spot.`);
           } },
         ];
@@ -2390,7 +2432,7 @@ function buildingMenu(b) {
       if (q?.type === 'bounty') {
         if (q.done) return [
           { label: `Collect the bounty (+${q.reward}g)`, action() {
-            P.gold += q.reward; P.fame += 5; P.jobQuest = null;
+            P.gold += q.reward; P.navalFame += 5; P.jobQuest = null;
             setBuildingText(`"${q.name} is finished? Fine work, captain." The guild counts out ${q.reward}g.`);
           } },
         ];
@@ -2462,7 +2504,7 @@ function buildingMenu(b) {
           const v = villages.find(x => x.id === P.discoveryQuest);
           return [
             { label: `Report: ${v.name} (+600g)`, action() {
-              P.gold += 600; P.fame += 5; P.discoveryQuest = null;
+              P.gold += 600; P.adventureFame += 5; P.discoveryQuest = null;
               setBuildingText(`Astounding — ${v.name}, confirmed! Reward: 600g. The society applauds you.`);
             } },
           ];
@@ -2531,7 +2573,7 @@ function buildingMenu(b) {
       { label: 'Make a donation', cost: 20, action() {
         P.gold -= 20;
         const roll = Math.random();
-        if (roll < 0.3) { P.fame += 1; setBuildingText('Your generosity is remembered. (fame +1)'); }
+        if (roll < 0.3) { P.adventureFame += 1; setBuildingText('Your generosity is remembered. (fame +1)'); }
         else if (roll < 0.6) { P.water += 10; P.food += 10;
           setBuildingText('The sisters share bread and water with your crew. (water +10, food +10)'); }
         else setBuildingText('Peace settles over you. Safe travels, captain.');
@@ -2909,11 +2951,11 @@ function renderMates() {
     const skStr = Object.entries(sk)
       .sort((a, b) => b[1] - a[1]).slice(0, 3)
       .map(([s, l]) => `${SKILL_LABEL[s]} Lv${l}`).join(' · ');
+    const a = mateAttrs(id);
     card.innerHTML = `<img src="${matePortraitUrl(m)}" alt="">` +
       `<div class="mate-stats"><b>${m.name}</b> · ${m.nation} · lv ${m.lv}<br>` +
       `<span style="color:#7fd4ff">${skStr}</span><br>` +
-      `lead ${m.leadership} seam ${m.seamanship} know ${m.knowledge} int ${m.intuition} ` +
-      `cour ${m.courage} sword ${m.swordplay} luck ${m.luck}</div>`;
+      `str ${a.str} · agi ${a.agi} · con ${a.con} · int ${a.int} · per ${a.per} · cha ${a.cha}</div>`;
     const sel = document.createElement('select');
     sel.innerHTML = cabinOptions(id);
     sel.value = mateCabin(id) ?? '';
@@ -3049,11 +3091,10 @@ const MENU_RENDER = {
     if (!P.mates.length) return html + '<p>No mates yet — meet them in bars.</p>';
     for (const id of P.mates) {
       const m = matesData[id];
+      const a = mateAttrs(id);
       html += `<div class="mate-card"><img src="${matePortraitUrl(m)}" alt="">` +
         `<div class="mate-stats"><b>${m.name}</b> · ${m.nation} · lv ${m.lv}<br>` +
-        `lead ${m.leadership} seam ${m.seamanship} know ${m.knowledge} int ${m.intuition} ` +
-        `cour ${m.courage} sword ${m.swordplay} luck ${m.luck}<br>` +
-        `nav ${m.navigation} gun ${m.gunnery} acc ${m.accounting}</div></div>`;
+        `str ${a.str} · agi ${a.agi} · con ${a.con} · int ${a.int} · per ${a.per} · cha ${a.cha}</div></div>`;
     }
     return html;
   },
@@ -3072,9 +3113,11 @@ const MENU_RENDER = {
                 : '<p>No equipment yet — visit a dry dock to outfit your ship.</p>';
   },
   hero() {
-    return `<p><b>${CHARACTER_NAMES[P.character]}</b>${fameTitle() ? ' · ' + fameTitle() : ''}</p>` +
-      `<p>fame: ${P.fame} · gold: ${P.gold}g · bank: ${P.bank}g · days: ${P.days}</p>` +
-      `<p>water: ${Math.floor(P.water)} · food: ${Math.floor(P.food)} · vigor: ${100 - Math.floor(P.fatigue)}</p>` +
+    const a = HERO_ATTRS[P.character];
+    return `<p><b>${CHARACTER_NAMES[P.character]}</b> · ${HERO_NATION[P.character]}${fameTitle() ? ' · ' + fameTitle() : ''}</p>` +
+      `<p>naval: ${P.navalFame} · trade: ${P.tradeFame} · adventure: ${P.adventureFame} · <span style="color:#f87171">notoriety: ${P.notoriety}</span></p>` +
+      `<p>str ${a.str} · agi ${a.agi} · con ${a.con} · int ${a.int} · per ${a.per} · cha ${a.cha}</p>` +
+      `<p>gold: ${P.gold}g · bank: ${P.bank}g · days: ${P.days} · water: ${Math.floor(P.water)} · food: ${Math.floor(P.food)} · vigor: ${100 - Math.floor(P.fatigue)}</p>` +
       `<h3 style="color:#ffd94d;margin:8px 0 2px">hero</h3>` +
       `<p>lv ${P.hero.lv} · hp ${P.hero.hp}/${heroMaxHp()} · atk ${heroAtk()} · def ${heroDef()} · ` +
       `weapon t${P.hero.weapon} · armor t${P.hero.armor} · balms ${P.hero.balms}</p>` +
@@ -3253,13 +3296,13 @@ function captureEnemy() {
   playSfx('./assets/sounds/explosion.ogg');
   if (P.fleet.length < 5) {
     P.fleet.push({ ship: e.ship.name, hull: Math.floor(e.ship.hull * 0.5) });
-    P.fame += 5;
+    P.navalFame += 5;
     save();
     showBanner(`${e.ship.name} captured!<small>she joins your fleet · fame +5</small>`);
   } else {
     const loot = Math.floor((300 + e.ship.price / 10) * (P.equipment.figurehead ? 1.25 : 1));
     P.gold += loot;
-    P.fame += 5;
+    P.navalFame += 5;
     save();
     showBanner(`${e.ship.name} captured!<small>sold for ${loot}g · fame +5</small>`);
   }
@@ -3314,7 +3357,7 @@ function digTreasure(q) {
   q.done = true;
   P.treasuresDug++;
   P.gold += q.gold;
-  P.fame += 3;
+  P.adventureFame += 3;
   let extra = '';
   if (Math.random() < 0.5 && cargoSpace() >= 5) {
     const names = Object.keys(goodsData.regions['Iberia']?.prices ?? {});
@@ -3344,7 +3387,7 @@ function sinkEnemy() {
   removePirate(p);
   const loot = Math.floor((150 + Math.random() * 400 + p.ship.price / 100) * (P.equipment.figurehead ? 1.25 : 1));
   P.gold += loot;
-  P.fame += 3;
+  P.navalFame += 3;
   save();
   playSfx('./assets/sounds/explosion.ogg');
   showBanner(`Enemy ship sunk!<small>loot: ${loot}g · fame +3</small>`);
@@ -3544,7 +3587,7 @@ function nearestVillage() {
 function goAshore(v) {
   discoveriesFound.add(v.id);
   xpInCabins('lookout', 'lookout', 10);
-  P.fame += 1;
+  P.adventureFame += 1;
   save();
   playSfx('./assets/sounds/discover.ogg');
   document.getElementById('discovery-name').textContent = v.name;
