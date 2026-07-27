@@ -3248,24 +3248,25 @@ function renderSchool() {
   if (!s) { closePanel('school'); return; }
   const div = document.getElementById('school-body');
   const a = s.attrs;
-  div.innerHTML = `<div style="display:flex;gap:16px;text-align:left">` +
-    `<img src="./assets/waifu/isabella.png" style="width:100px;height:110px;object-fit:cover;border:1px solid var(--bronze);border-radius:6px">` +
-    `<div style="flex:1">` +
-    `<p>month <b>${s.month}</b> / 36 · money <b>${s.money}g</b> · stress <b>${s.stress}</b></p>` +
-    `<p>str ${a.str} · agi ${a.agi} · con ${a.con} · int ${a.int} · per ${a.per} · cha ${a.cha}</p>` +
-    `</div></div><hr style="border-color:#2a3444"><p>Schedule this month:</p>`;
-  const btnDiv = document.createElement('div');
+  div.innerHTML =
+    `<div class="school-main">` +
+    `<div class="school-left">` +
+    `<img class="school-portrait" src="./assets/waifu/isabella.png" alt="Isabella">` +
+    `<div class="school-name">Isabella</div>` +
+    `<div class="school-age">month <b>${s.month}</b> / 36</div>` +
+    `<div class="school-money"><b>${s.money}</b> G</div>` +
+    `</div>` +
+    `<div class="school-mid"><h3>📅 Schedule this month</h3></div>` +
+    `<div class="school-right">` +
+    `<h3>Status</h3><div class="school-stat">stress: <b>${s.stress}</b></div>` +
+    `<h3>Attributes</h3><div class="school-stat">str ${a.str} · agi ${a.agi} · con ${a.con}<br>int ${a.int} · per ${a.per} · cha ${a.cha}</div>` +
+    `</div></div>` +
+    `<div class="school-result" id="school-result">${s.lastResult ?? 'Choose an activity for this month.'}</div>`;
+  const mid = div.querySelector('.school-mid');
   for (const act of SCHOOL_ACTIVITIES) {
-    mkBtn(btnDiv, act.label, () => schoolActivity(act), s.money < act.cost);
+    mkBtn(mid, act.label, () => schoolActivity(act), s.money < act.cost);
   }
-  mkBtn(btnDiv, 'Skip school (graduate now)', () => schoolGraduate(true), false);
-  div.appendChild(btnDiv);
-  if (s.lastResult) {
-    const res = document.createElement('p');
-    res.style.color = '#7fd4ff';
-    res.textContent = s.lastResult;
-    div.appendChild(res);
-  }
+  mkBtn(mid, '⏩ Skip school (graduate now)', () => schoolGraduate(true), false);
 }
 function schoolActivity(act) {
   const s = P.school;

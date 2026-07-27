@@ -264,6 +264,30 @@ canvas { display: block; }
 .story-prog { color: var(--ink); font-weight: normal; }
 .story-future { color: var(--ink-dim); opacity: .6; }
 
+/* ---------- school (Chapter 1, PM2-style full-screen) ---------- */
+#school-panel { position: fixed; inset: 0; z-index: 9; display: none;
+                background: radial-gradient(ellipse at center, #1a2a4a 0%, #0a1020 100%);
+                color: var(--ink); overflow-y: auto; }
+#school-panel .school-inner { max-width: 920px; margin: 0 auto; padding: 24px 20px; text-align: center; }
+#school-panel h1 { color: var(--gold); font-size: 32px; margin: 0 0 4px; letter-spacing: 2px; }
+#school-panel .school-intro { color: var(--ink-dim); font-size: 15px; margin: 0 0 18px; }
+#school-panel .school-main { display: flex; gap: 20px; text-align: left; }
+#school-panel .school-left { flex: 0 0 220px; text-align: center; }
+#school-panel .school-portrait { width: 200px; height: 240px; object-fit: cover;
+                                 border: 2px solid var(--bronze); border-radius: 8px; background: #0a1428; }
+#school-panel .school-name { color: var(--gold); font-size: 20px; margin-top: 8px; }
+#school-panel .school-age, #school-panel .school-money { font-size: 15px; margin-top: 4px; }
+#school-panel .school-mid { flex: 1; }
+#school-panel .school-mid h3, #school-panel .school-right h3 { color: var(--gold); font-size: 16px; margin: 0 0 8px; }
+#school-panel .school-mid button { display: block; width: 100%; margin: 4px 0; padding: 10px 14px;
+                                   font-size: 16px; text-align: left; }
+#school-panel .school-right { flex: 0 0 230px; }
+#school-panel .school-stat { background: var(--bg-inset); border: 1px solid var(--bronze);
+                             border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 15px; }
+#school-panel .school-result { margin-top: 18px; padding: 12px; background: var(--bg-inset);
+                               border: 1px solid var(--bronze); border-radius: 8px; color: #7fd4ff;
+                               font-size: 15px; min-height: 24px; text-align: left; }
+
 /* ---------- utilities ---------- */
 .key { display: inline-block; border: 1px solid var(--bronze); border-radius: var(--radius-s);
        padding: 0 7px; margin: 0 2px; background: #1a1a1a; color: #fff; font-family: monospace; }
