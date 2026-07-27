@@ -1836,6 +1836,7 @@ let P = {
   mateSp: {},                           // mateId -> current sp
   supplyRatio: 50,                      // harbor resupply water:food ratio (water %)
   lastPort: null,                       // last port visited (for no-ship reload)
+  school: null,                         // Isabella's 3-year school phase {month, stress, money, attrs}
   mateHp: {},                       // mate id -> current hp (land battles)
   telescope: false, discoveryQuest: null, deliveryQuest: null,
   palaceMilestone: 0, days: 0, discoveries: [], portsFound: [],
@@ -1926,6 +1927,7 @@ P.mateFame = P.mateFame ?? {};
 P.hero.sp = P.hero.sp ?? heroMaxSp();
 P.mateSp = P.mateSp ?? {};
 P.supplyRatio = P.supplyRatio ?? 50;
+P.school = P.school ?? null;
 // backward-compat alias: P.fame = naval + trade + adventure (storyline/fameTitle/tests use it)
 Object.defineProperty(P, 'fame', {
   get: () => P.navalFame + P.tradeFame + P.adventureFame,
@@ -2616,6 +2618,10 @@ function buildingMenu(b) {
       ];
     }
     case 'msc': {
+      // Isabella: continue the 3-year school phase
+      if (P.character === 6 && P.school) {
+        return [{ label: `Continue school (month ${P.school.month}/36)`, action() { openPanel('school'); } }];
+      }
       // Isabella prologue: greet the Duke (her father)
       if (P.character === 6 && P.prologue && P.prologue.step === 4) {
         return [{ label: 'Greet your father, Duke Leon Franco', action() {
@@ -2623,9 +2629,13 @@ function buildingMenu(b) {
           showDialog('Duke Leon Franco',
             '"Isabella… my daughter. You\'ve grown so much since I last saw you as a child.<br><br>' +
             'I heard about your mother. I\'m so sorry — I should have been there for you both.<br><br>' +
-            '<i>(You want to tell him how he neglected you and mother all these years… but you hold your tongue.)</i>',
+            '<i>(You want to tell him how he neglected you and mother all these years… but you hold your tongue.)</i><br><br>' +
+            '"Now — you will study here in Lisbon for three years. Make me proud."',
             './assets/dos/duke.png');
+          // Chapter 1: 3-year school phase (PM2-style)
+          P.school = { month: 0, stress: 0, money: 500, attrs: { ...HERO_ATTRS[6] } };
           save();
+          setTimeout(() => openPanel('school'), 4800);   // open the school panel after the dialog
         } }];
       }
       if (P.discoveryQuest) {
@@ -3224,6 +3234,73 @@ function renderSupply() {
   }, cost <= 0 || P.gold < cost);
 }
 definePanel('supply', supplyPanel, { building: true, render: renderSupply });
+
+// --- Chapter 1: Isabella's 3-year school phase (PM2-style) ---
+const schoolPanel = document.getElementById('school-panel');
+const SCHOOL_ACTIVITIES = [
+  { key: 'study', label: '📖 Study (-50g)', cost: 50, stress: 10, attrs: { int: 1, per: 1 } },
+  { key: 'work', label: '🧹 Work (+30g)', cost: -30, stress: 15, attrs: { str: 1, con: 1 } },
+  { key: 'rest', label: '🌿 Rest (free)', cost: 0, stress: -20, attrs: { cha: 1 } },
+  { key: 'train', label: '⚔️ Warrior training (-30g)', cost: 30, stress: 15, attrs: { str: 1, agi: 1 } },
+];
+function renderSchool() {
+  const s = P.school;
+  if (!s) { closePanel('school'); return; }
+  const div = document.getElementById('school-body');
+  const a = s.attrs;
+  div.innerHTML = `<div style="display:flex;gap:16px;text-align:left">` +
+    `<img src="./assets/waifu/isabella.png" style="width:100px;height:110px;object-fit:cover;border:1px solid var(--bronze);border-radius:6px">` +
+    `<div style="flex:1">` +
+    `<p>month <b>${s.month}</b> / 36 · money <b>${s.money}g</b> · stress <b>${s.stress}</b></p>` +
+    `<p>str ${a.str} · agi ${a.agi} · con ${a.con} · int ${a.int} · per ${a.per} · cha ${a.cha}</p>` +
+    `</div></div><hr style="border-color:#2a3444"><p>Schedule this month:</p>`;
+  const btnDiv = document.createElement('div');
+  for (const act of SCHOOL_ACTIVITIES) {
+    mkBtn(btnDiv, act.label, () => schoolActivity(act), s.money < act.cost);
+  }
+  mkBtn(btnDiv, 'Skip school (graduate now)', () => schoolGraduate(true), false);
+  div.appendChild(btnDiv);
+  if (s.lastResult) {
+    const res = document.createElement('p');
+    res.style.color = '#7fd4ff';
+    res.textContent = s.lastResult;
+    div.appendChild(res);
+  }
+}
+function schoolActivity(act) {
+  const s = P.school;
+  if (!s) return;
+  s.money -= act.cost;
+  s.stress = Math.max(0, s.stress + act.stress);
+  let result;
+  if (s.stress >= 100) {
+    s.stress = Math.max(0, s.stress - 30);
+    result = 'Isabella fell ill from overwork and had to rest. (no gain this month)';
+  } else {
+    for (const [k, v] of Object.entries(act.attrs)) s.attrs[k] += v;
+    result = `${act.label.split(' ')[0]} — ${Object.entries(act.attrs).map(([k, v]) => `${k} +${v}`).join(', ')}`;
+  }
+  s.month++;
+  s.lastResult = result;
+  if (s.month >= 36) { schoolGraduate(false); return; }
+  save();
+  renderSchool();
+}
+function schoolGraduate(skip) {
+  const s = P.school;
+  if (!skip && s) HERO_ATTRS[6] = { ...s.attrs };   // set Isabella's initial attributes
+  P.school = null;
+  closePanel('school');
+  showDialog(CHARACTER_NAMES[6],
+    (skip ? 'You decide to skip the formal schooling and set out on your own.<br><br>' :
+      'Three years have passed. You\'ve grown into a capable young woman, ready to make your own way in the world.<br><br>') +
+    `<b>Final attributes:</b> str ${HERO_ATTRS[6].str} · agi ${HERO_ATTRS[6].agi} · con ${HERO_ATTRS[6].con} · ` +
+    `int ${HERO_ATTRS[6].int} · per ${HERO_ATTRS[6].per} · cha ${HERO_ATTRS[6].cha}<br><br>` +
+    '<i>(Chapter 1 complete — your journey begins!)</i>',
+    DOS_PORTRAIT[6]);
+  save();
+}
+definePanel('school', schoolPanel, { render: renderSchool });
 
 // ---------------------------------------------------------------------------
 // Captain's Log (I): fleet / crew / outfit / hero / cargo / discoveries / quests
