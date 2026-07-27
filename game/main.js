@@ -3289,7 +3289,7 @@ function schoolActivity(act) {
 }
 function schoolGraduate(skip) {
   const s = P.school;
-  if (!skip && s) HERO_ATTRS[6] = { ...s.attrs };   // set Isabella's initial attributes
+  if (s) HERO_ATTRS[6] = { ...s.attrs };   // always set Isabella's attributes to the school result
   P.school = null;
   closePanel('school');
   showDialog(CHARACTER_NAMES[6],
