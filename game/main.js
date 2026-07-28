@@ -3360,6 +3360,11 @@ function schoolConfirm() {
       results.push(msg);
     }
     s.month++;
+    // Christmas gift: every December (month 12, 24, 36), the Duke sends 500G
+    if (s.month % 12 === 0 && s.month <= 36) {
+      s.money += 500;
+      results.push(`🎄 month ${s.month}: Christmas! Your father the Duke sends you <b>500G</b> as a gift.`);
+    }
     if (s.month >= 36) break;
   }
   s.schedule = [null, null, null];
