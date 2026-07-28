@@ -3246,43 +3246,75 @@ const SCHOOL_ACTIVITIES = [
 function renderSchool() {
   const s = P.school;
   if (!s) { closePanel('school'); return; }
-  const div = document.getElementById('school-body');
+  s.schedule = s.schedule ?? [null, null, null];
   const a = s.attrs;
+  const season = schoolSeason(s.month);
+  const div = document.getElementById('school-body');
   div.innerHTML =
     `<div class="school-main">` +
     `<div class="school-left">` +
     `<img class="school-portrait" src="./assets/waifu/isabella.png" alt="Isabella">` +
     `<div class="school-name">Isabella</div>` +
-    `<div class="school-age">month <b>${s.month}</b> / 36</div>` +
+    `<div class="school-age">month <b>${s.month}</b> / 36 · ${season.label}</div>` +
     `<div class="school-money"><b>${s.money}</b> G</div>` +
     `</div>` +
-    `<div class="school-mid"><h3>📅 Schedule this month</h3></div>` +
+    `<div class="school-mid"><h3>📅 Schedule 3 months</h3><div class="school-schedule" id="school-schedule"></div>` +
+    `<button id="school-confirm" class="school-confirm">✔ Confirm 3 months</button>` +
+    `<button id="school-skip">⏩ Skip school (graduate now)</button></div>` +
     `<div class="school-right">` +
     `<h3>Status</h3><div class="school-stat">stress: <b>${s.stress}</b></div>` +
     `<h3>Attributes</h3><div class="school-stat">str ${a.str} · agi ${a.agi} · con ${a.con}<br>int ${a.int} · per ${a.per} · cha ${a.cha}</div>` +
     `</div></div>` +
-    `<div class="school-result" id="school-result">${s.lastResult ?? 'Choose an activity for this month.'}</div>`;
-  const mid = div.querySelector('.school-mid');
-  for (const act of SCHOOL_ACTIVITIES) {
-    mkBtn(mid, act.label, () => schoolActivity(act), s.money < act.cost);
+    `<div class="school-result" id="school-result">${s.lastResult ?? 'Pick an activity for each of the next 3 months.'}</div>`;
+  // 3 activity slots (one per month)
+  const sched = div.querySelector('#school-schedule');
+  for (let i = 0; i < 3; i++) {
+    const slot = document.createElement('div');
+    slot.className = 'school-slot';
+    slot.innerHTML = `<h4>Month ${s.month + i + 1}</h4>`;
+    for (const act of SCHOOL_ACTIVITIES) {
+      const b = document.createElement('button');
+      b.textContent = act.label;
+      b.className = s.schedule[i] === act.key ? 'active' : '';
+      b.disabled = s.money < act.cost;
+      b.onclick = () => { s.schedule[i] = act.key; renderSchool(); };
+      slot.appendChild(b);
+    }
+    sched.appendChild(slot);
   }
-  mkBtn(mid, '⏩ Skip school (graduate now)', () => schoolGraduate(true), false);
+  const confirmBtn = div.querySelector('#school-confirm');
+  confirmBtn.disabled = s.schedule.some(x => !x);
+  confirmBtn.onclick = () => schoolConfirm();
+  div.querySelector('#school-skip').onclick = () => schoolGraduate(true);
+  // four-seasons background
+  document.getElementById('school-panel').dataset.season = season.key;
 }
-function schoolActivity(act) {
+function schoolSeason(month) {
+  if (month < 9) return { key: 'spring', label: '🌸 Spring' };
+  if (month < 18) return { key: 'summer', label: '☀️ Summer' };
+  if (month < 27) return { key: 'autumn', label: '🍂 Autumn' };
+  return { key: 'winter', label: '❄️ Winter' };
+}
+function schoolConfirm() {
   const s = P.school;
-  if (!s) return;
-  s.money -= act.cost;
-  s.stress = Math.max(0, s.stress + act.stress);
-  let result;
-  if (s.stress >= 100) {
-    s.stress = Math.max(0, s.stress - 30);
-    result = 'Isabella fell ill from overwork and had to rest. (no gain this month)';
-  } else {
-    for (const [k, v] of Object.entries(act.attrs)) s.attrs[k] += v;
-    result = `${act.label.split(' ')[0]} — ${Object.entries(act.attrs).map(([k, v]) => `${k} +${v}`).join(', ')}`;
+  if (!s || s.schedule.some(x => !x)) return;
+  const results = [];
+  for (let i = 0; i < 3; i++) {
+    const act = SCHOOL_ACTIVITIES.find(a => a.key === s.schedule[i]);
+    s.money -= act.cost;
+    s.stress = Math.max(0, s.stress + act.stress);
+    if (s.stress >= 100) {
+      s.stress = Math.max(0, s.stress - 30);
+      results.push(`month ${s.month + 1}: Isabella fell ill (no gain)`);
+    } else {
+      for (const [k, v] of Object.entries(act.attrs)) s.attrs[k] += v;
+      results.push(`month ${s.month + 1}: ${act.label.split(' ')[0]} — ${Object.entries(act.attrs).map(([k, v]) => `${k} +${v}`).join(', ')}`);
+    }
+    s.month++;
+    if (s.month >= 36) break;
   }
-  s.month++;
-  s.lastResult = result;
+  s.schedule = [null, null, null];
+  s.lastResult = results.join('<br>');
   if (s.month >= 36) { schoolGraduate(false); return; }
   save();
   renderSchool();

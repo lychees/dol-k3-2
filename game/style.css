@@ -287,6 +287,21 @@ canvas { display: block; }
 #school-panel .school-result { margin-top: 18px; padding: 12px; background: var(--bg-inset);
                                border: 1px solid var(--bronze); border-radius: 8px; color: #7fd4ff;
                                font-size: 15px; min-height: 24px; text-align: left; }
+/* four seasons background */
+#school-panel[data-season="spring"] { background: radial-gradient(ellipse at center, #2a4a2a 0%, #0a2010 100%); }
+#school-panel[data-season="summer"] { background: radial-gradient(ellipse at center, #4a3a1a 0%, #201005 100%); }
+#school-panel[data-season="autumn"] { background: radial-gradient(ellipse at center, #4a2a1a 0%, #201005 100%); }
+#school-panel[data-season="winter"] { background: radial-gradient(ellipse at center, #2a3a4a 0%, #0a1020 100%); }
+/* 3-month schedule slots */
+#school-panel .school-schedule { display: flex; gap: 10px; }
+#school-panel .school-slot { flex: 1; background: var(--bg-inset); border: 1px solid var(--bronze);
+                             border-radius: 8px; padding: 8px; }
+#school-panel .school-slot h4 { color: var(--gold); font-size: 14px; margin: 0 0 6px; }
+#school-panel .school-slot button { display: block; width: 100%; margin: 2px 0; padding: 6px 8px; font-size: 13px; }
+#school-panel .school-slot button.active { background: var(--bg-btn-active); border-color: var(--gold); }
+#school-panel .school-confirm { width: 100%; margin-top: 10px; padding: 10px; font-size: 16px;
+                                background: var(--bg-btn-active); border-color: var(--gold); }
+#school-panel #school-skip { width: 100%; margin-top: 4px; padding: 8px; font-size: 14px; }
 
 /* ---------- utilities ---------- */
 .key { display: inline-block; border: 1px solid var(--bronze); border-radius: var(--radius-s);
