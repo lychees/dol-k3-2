@@ -3300,7 +3300,7 @@ function renderSchool() {
     slot.innerHTML = `<h4>Month ${s.month + i + 1}</h4>`;
     for (const act of SCHOOL_ACTIVITIES) {
       const b = document.createElement('button');
-      b.textContent = act.label;
+      b.textContent = act.key === 'study' ? `📖 Study ${HERO_SKILL_LABEL[s.learnSkill ?? 'geography']} (-50g)` : act.label;
       b.className = s.schedule[i] === act.key ? 'active' : '';
       b.disabled = s.money < act.cost;
       b.onclick = () => { s.schedule[i] = act.key; renderSchool(); };
