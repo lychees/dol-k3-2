@@ -1401,6 +1401,30 @@ const mateAttrs = id => {
     cha: s(m.leadership),
   };
 };
+// --- hero skills: 6 academic + 3 social, level 0 + exp, level up at 100*(lv+1) exp ---
+const HERO_SKILLS = ['geography', 'archaeology', 'treasure', 'theology', 'art', 'biology',
+                     'etiquette', 'social', 'accounting'];
+const HERO_SKILL_LABEL = {
+  geography: '地理', archaeology: '考古', treasure: '财宝', theology: '神学', art: '艺术', biology: '生物',
+  etiquette: '礼仪', social: '社交', accounting: '会计',
+};
+const skillExpNeeded = lv => 100 * (lv + 1);   // exp to go from lv to lv+1 (100, 200, 300, ...)
+function heroSkill(skill) {
+  P.hero.skills[skill] = P.hero.skills[skill] ?? { lv: 0, exp: 0 };
+  return P.hero.skills[skill];
+}
+// add exp to a hero skill, leveling up (possibly multiple times); returns levels gained
+function gainSkillExp(skill, exp) {
+  const s = heroSkill(skill);
+  s.exp += exp;
+  let ups = 0;
+  while (s.exp >= skillExpNeeded(s.lv)) {
+    s.exp -= skillExpNeeded(s.lv);
+    s.lv++;
+    ups++;
+  }
+  return ups;
+}
 // increment the protagonist's fame of a type AND share +1 with each mate
 function gainFame(type, n) {
   P[type] += n;
@@ -1832,7 +1856,7 @@ let P = {
             lookout: null, surgeon: null, boatswain: null },
   equipment: { sails: 0, cannons: 0, ram: false, figurehead: false, boarding: false, armor: false },
   character: 0,
-  hero: { lv: 1, exp: 0, hp: 28, sp: 20, weapon: 0, armor: 0, balms: 0 },
+  hero: { lv: 1, exp: 0, hp: 28, sp: 20, weapon: 0, armor: 0, balms: 0, skills: {} },
   mateSp: {},                           // mateId -> current sp
   supplyRatio: 50,                      // harbor resupply water:food ratio (water %)
   lastPort: null,                       // last port visited (for no-ship reload)
@@ -1928,6 +1952,7 @@ P.hero.sp = P.hero.sp ?? heroMaxSp();
 P.mateSp = P.mateSp ?? {};
 P.supplyRatio = P.supplyRatio ?? 50;
 P.school = P.school ?? null;
+P.hero.skills = P.hero.skills ?? {};
 // backward-compat alias: P.fame = naval + trade + adventure (storyline/fameTitle/tests use it)
 Object.defineProperty(P, 'fame', {
   get: () => P.navalFame + P.tradeFame + P.adventureFame,
@@ -3264,6 +3289,7 @@ function renderSchool() {
     `<div class="school-right">` +
     `<h3>Status</h3><div class="school-stat">stress: <b>${s.stress}</b></div>` +
     `<h3>Attributes</h3><div class="school-stat">str ${a.str} · agi ${a.agi} · con ${a.con}<br>int ${a.int} · per ${a.per} · cha ${a.cha}</div>` +
+    `<h3>Learn skill (Study)</h3><div class="school-stat" id="school-learn"></div>` +
     `</div></div>` +
     `<div class="school-result" id="school-result">${s.lastResult ?? 'Pick an activity for each of the next 3 months.'}</div>`;
   // 3 activity slots (one per month)
@@ -3281,6 +3307,18 @@ function renderSchool() {
       slot.appendChild(b);
     }
     sched.appendChild(slot);
+  }
+  // learn-skill selection (which skill the Study activity trains)
+  s.learnSkill = s.learnSkill ?? 'geography';
+  const learnDiv = div.querySelector('#school-learn');
+  for (const skill of HERO_SKILLS) {
+    const sk = heroSkill(skill);
+    const b = document.createElement('button');
+    b.textContent = `${HERO_SKILL_LABEL[skill]} Lv${sk.lv}`;
+    b.className = s.learnSkill === skill ? 'active' : '';
+    b.title = `exp ${sk.exp}/${skillExpNeeded(sk.lv)}`;
+    b.onclick = () => { s.learnSkill = skill; renderSchool(); };
+    learnDiv.appendChild(b);
   }
   const confirmBtn = div.querySelector('#school-confirm');
   confirmBtn.disabled = s.schedule.some(x => !x);
@@ -3308,7 +3346,18 @@ function schoolConfirm() {
       results.push(`month ${s.month + 1}: Isabella fell ill (no gain)`);
     } else {
       for (const [k, v] of Object.entries(act.attrs)) s.attrs[k] += v;
-      results.push(`month ${s.month + 1}: ${act.label.split(' ')[0]} — ${Object.entries(act.attrs).map(([k, v]) => `${k} +${v}`).join(', ')}`);
+      let msg = `month ${s.month + 1}: ${act.label.split(' ')[0]} — ${Object.entries(act.attrs).map(([k, v]) => `${k} +${v}`).join(', ')}`;
+      // Study activity also trains the chosen skill (rnd exp, 1/3 great success = double)
+      if (act.key === 'study') {
+        const int = s.attrs.int;
+        let exp = 50 + Math.floor(Math.random() * (75 + int * 5 - 50 + 1));   // rnd(50, 75 + int*5)
+        const great = Math.random() < 1 / 3;
+        if (great) exp *= 2;
+        const ups = gainSkillExp(s.learnSkill, exp);
+        const sk = heroSkill(s.learnSkill);
+        msg += ` · ${HERO_SKILL_LABEL[s.learnSkill]} +${exp} exp${great ? ' (great success!)' : ''}${ups ? ` → Lv${sk.lv}!` : ''}`;
+      }
+      results.push(msg);
     }
     s.month++;
     if (s.month >= 36) break;
@@ -3363,10 +3412,12 @@ const MENU_RENDER = {
     html += '</div><div style="flex:1">';
     if (sel === 'hero') {
       const a = HERO_ATTRS[P.character];
+      const skillStr = HERO_SKILLS.map(sk => `${HERO_SKILL_LABEL[sk]} Lv${heroSkill(sk).lv}`).join(' · ');
       html += `<p><b>${CHARACTER_NAMES[P.character]}</b> · ${HERO_NATION[P.character]}${fameTitle() ? ' · ' + fameTitle() : ''}</p>` +
         fameBox(P.navalFame, P.tradeFame, P.adventureFame, P.notoriety) +
         `<p>str ${a.str} · agi ${a.agi} · con ${a.con} · int ${a.int} · per ${a.per} · cha ${a.cha}</p>` +
-        `<p style="white-space:nowrap">hp${hudBar(P.hero.hp / heroMaxHp(), '#5bff8c')} ${P.hero.hp}/${heroMaxHp()} · sp${hudBar(P.hero.sp / heroMaxSp(), '#5b8cff')} ${P.hero.sp}/${heroMaxSp()}</p>`;
+        `<p style="white-space:nowrap">hp${hudBar(P.hero.hp / heroMaxHp(), '#5bff8c')} ${P.hero.hp}/${heroMaxHp()} · sp${hudBar(P.hero.sp / heroMaxSp(), '#5b8cff')} ${P.hero.sp}/${heroMaxSp()}</p>` +
+        `<p style="font-size:13px;color:#7fd4ff">${skillStr}</p>`;
     } else {
       const id = +sel.slice(4);
       const m = matesData[id];
