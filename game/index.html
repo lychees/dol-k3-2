@@ -3,8 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Uncharted Waters — three.js</title>
-<link rel="stylesheet" href="./style.css">
+<script>
+  // force-refresh for flow testing: append a timestamp to style.css so the cache is always bypassed
+  const _l = document.createElement('link');
+  _l.rel = 'stylesheet';
+  _l.href = './style.css?v=' + Date.now();
+  document.head.appendChild(_l);
+</script>
 </head>
 <body>
 <div id="app"></div>
@@ -277,6 +286,12 @@
 <script type="importmap">
   { "imports": { "three": "./lib/three.module.js" } }
 </script>
-<script type="module" src="./main.js?v=20260743"></script>
+<script>
+  // force-refresh for flow testing: append a timestamp to main.js so the cache is always bypassed
+  const _s = document.createElement('script');
+  _s.type = 'module';
+  _s.src = './main.js?v=' + Date.now();
+  document.body.appendChild(_s);
+</script>
 </body>
 </html>
