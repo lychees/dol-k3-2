@@ -14,8 +14,8 @@ const ROWS = 1080;            // world map height in tiles
 const TILESET_COLS = 16;      // tiles per row in the tileset image
 const TILESET_ROWS = 8;
 const SAILABLE = new Set(Array.from({ length: 32 }, (_, i) => i + 1)); // ids 1..32
-const DAY_LENGTH_SEC = 180;   // one full in-game day
-const SAIL_DAY_SCALE = 10;    // time flows this much faster under sail (voyages cost days)
+let DAY_LENGTH_SEC = 180;   // one full in-game day
+let SAIL_DAY_SCALE = 10;    // time flows this much faster under sail (voyages cost days)
 const PORT_SIZE = 96;         // port maps are 96x96 tiles
 const PORT_WALK_MAX = 39;     // walkable port tile ids: 1..39
 const PORT_WALK_MAX_ASIA = 46;
@@ -41,7 +41,7 @@ const mdMode = localStorage.getItem(MD_KEY) === '1';
 // ---------------------------------------------------------------------------
 // Boot: load all assets, then init
 // ---------------------------------------------------------------------------
-const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, shipData, matesData, maidsData, towns, ruins, storyData, matesExtra, heroesData, monstersData, shipTex, personTex, npcAtlasTex, heroesTex] =
+const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, shipData, matesData, maidsData, towns, ruins, storyData, matesExtra, heroesData, monstersData, equipmentData, balanceData, shipTex, personTex, npcAtlasTex, heroesTex] =
   await Promise.all([
     fetch('./assets/world_map.bin').then(r => r.arrayBuffer()),
     fetch('./assets/portmaps.bin').then(r => r.arrayBuffer()),
@@ -65,6 +65,10 @@ const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, 
     // monsters.json overrides LAND_MONSTERS. Missing files keep built-ins.
     fetch('./assets/heroes.json').then(r => r.ok ? r.json() : null).catch(() => null),
     fetch('./assets/monsters.json').then(r => r.ok ? r.json() : null).catch(() => null),
+    // equipment.json overrides OUTFIT_ITEMS/CABIN_TYPES/CABIN_DEFAULTS;
+    // balance.json overrides the global balance constants. Missing files keep built-ins.
+    fetch('./assets/equipment.json').then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch('./assets/balance.json').then(r => r.ok ? r.json() : null).catch(() => null),
     loadTex('./assets/ship-tileset.png', false),
     loadTex('./assets/person-tileset.png', false),
     loadTex('./assets/npc_atlas.png', false),
@@ -498,6 +502,19 @@ if (heroesData?.growth) {
     else GROWTH[k] = v;
   }
 }
+
+// 全局平衡参数（assets/balance.json 可覆盖；各项含义见 editor/FORMATS.md）
+const BALANCE = {
+  sailDayScale: 10, dayLengthSec: 180, bankInterest: 0.02,
+  drainBase: 4, drainPerCrew: 0.25,
+  fatiguePerSettle: 6, starvingFatigueMul: 3,
+  deathBase: 10, deathMinPct: 0.05, deathRandPct: 0.2,
+  pirateShips: ['Brigantine', 'Nao', 'Galleon', 'Carrack'],
+  pirateRate: 25,
+};
+if (balanceData) Object.assign(BALANCE, balanceData);
+DAY_LENGTH_SEC = BALANCE.dayLengthSec;
+SAIL_DAY_SCALE = BALANCE.sailDayScale;
 
 // Main storylines — one per hero, 5 chapters each. check() = completion condition,
 // progress() = "cur/goal" text, reward = gold, text = narrative beat on completion.
@@ -1934,7 +1951,7 @@ let P = {
   telescope: false, discoveryQuest: null, deliveryQuest: null,
   palaceMilestone: 0, days: 0, discoveries: [], portsFound: [],
   portDev: {},                        // portId -> {dev, mine}
-  pirateRate: 25,                     // auto-spawn interval (0 = none)
+  pirateRate: BALANCE.pirateRate,     // auto-spawn interval (0 = none)
   devSpeed: null,                 // developer-mode ship speed override
   story: { step: 0 },                 // main storyline progress (per hero)
   shipsSunk: 0, treasuresDug: 0,      // storyline counters
@@ -2060,7 +2077,7 @@ const fleetMaxCrew = () => P.fleet.reduce((a, f) => a + shipByName(f.ship).maxCr
 const fleetSpeed = () => Math.min(...P.fleet.map(f => shipStats(f).speed));
 
 // --- UW4 cabins: each ship has refittable cabin slots; mates are assigned ---
-const CABIN_TYPES = {
+let CABIN_TYPES = {
   captain:    { label: 'Captain',   stat: 'leadership', desc: '+1% melee / pt' },
   navigation: { label: 'Navigator', stat: 'navigation', desc: '+5% speed / pt' },
   deck:       { label: 'Deck',      stat: 'seamanship', desc: '+2% speed / pt' },
@@ -2072,7 +2089,10 @@ const CABIN_TYPES = {
   chapel:     { label: 'Chapel',    stat: 'luck',       desc: '-3% fatigue / pt' },
 };
 const CABIN_COUNT = cargo => (cargo <= 12 ? 2 : cargo <= 25 ? 3 : cargo <= 60 ? 4 : 5);
-const CABIN_DEFAULTS = ['deck', 'navigation', 'gunnery', 'lookout', 'kitchen'];
+const CABIN_DEFAULTS_BUILTIN = ['deck', 'navigation', 'gunnery', 'lookout', 'kitchen'];
+// assets/equipment.json (edited with editor/outfit.html) overrides cabins & defaults
+let CABIN_DEFAULTS = equipmentData?.cabinDefaults ?? CABIN_DEFAULTS_BUILTIN;
+if (equipmentData?.cabins) CABIN_TYPES = equipmentData.cabins;
 
 function cabinsOf(i) {
   const f = P.fleet[i];
@@ -2303,19 +2323,19 @@ function settleConsumption() {
   }
   if (scene === 'sea') {
     // water & rations: more mouths to feed -> faster drain; each drains at half rate
-    const drain = (4 + P.crew * 0.25) / 2 * boatswainFactor();
+    const drain = (BALANCE.drainBase + P.crew * BALANCE.drainPerCrew) / 2 * boatswainFactor();
     P.water = Math.max(0, P.water - drain / 2);
     P.food = Math.max(0, P.food - drain / 2);
     const starving = P.water <= 0 || P.food <= 0;
     // a starving crew tires far faster
-    P.fatigue = Math.min(100, P.fatigue + 6 * (starving ? 3 : 1)
+    P.fatigue = Math.min(100, P.fatigue + BALANCE.fatiguePerSettle * (starving ? BALANCE.starvingFatigueMul : 1)
                  * (P.equipment.figurehead ? 0.5 : 1) * surgeonFactor() * chapelFactor());
     if (starving) {
       showBanner('Out of water and rations!<small>the crew is starving — fatigue soars; find a port</small>');
     }
     if (P.fatigue >= 100) {
-      // exhaustion kills: 10 + random(5%, 25%) of the crew per settlement (twice a day)
-      const dead = Math.min(P.crew, 10 + Math.ceil(P.crew * (0.05 + Math.random() * 0.2)));
+      // exhaustion kills: deathBase + random(deathMinPct, deathMinPct+deathRandPct) of the crew per settlement
+      const dead = Math.min(P.crew, BALANCE.deathBase + Math.ceil(P.crew * (BALANCE.deathMinPct + Math.random() * BALANCE.deathRandPct)));
       P.crew = Math.max(0, P.crew - dead);
       if (P.crew <= 0) { gameOver('exhaustion'); return; }
       showBanner(`${dead} sailors died of exhaustion!<small>lower fatigue — rest at an inn, lime juice, chapel</small>`);
@@ -2325,7 +2345,7 @@ function settleConsumption() {
 
 function onNewDay() {
   P.days++;
-  P.bank = Math.floor(P.bank * 1.02);          // 2% daily interest
+  P.bank = Math.floor(P.bank * (1 + BALANCE.bankInterest));   // daily interest
   // mates train their posted skills daily (UWO-style growth)
   for (const [idStr, key] of Object.entries(P.shipCabins)) {
     const [i, j] = key.split(':').map(Number);
@@ -3221,7 +3241,7 @@ definePanel('mates', matesPanel, { building: true, render: renderMates });
 // Outfit panel: sails / cannons / ram / figurehead / boarding / armor
 // ---------------------------------------------------------------------------
 const outfitPanel = document.getElementById('outfit-panel');
-const OUTFIT_ITEMS = [
+let OUTFIT_ITEMS = [
   { key: 'sails', tiers: [
     { name: 'Studding Sails', cost: 1500, desc: '+5% speed' },
     { name: 'Skysails', cost: 4000, desc: '+10% total' },
@@ -3235,6 +3255,8 @@ const OUTFIT_ITEMS = [
   { key: 'boarding', name: 'Boarding Planks', cost: 3500, desc: '+25% melee power in boarding' },
   { key: 'armor', name: 'Armor Plating', cost: 5000, desc: 'damage taken -25%' },
 ];
+// assets/equipment.json (edited with editor/outfit.html) overrides the table above
+if (equipmentData?.outfit) OUTFIT_ITEMS = equipmentData.outfit;
 
 function renderOutfit() {
   document.getElementById('outfit-info').innerHTML = `gold: <b>${P.gold}g</b>`;
@@ -3692,7 +3714,7 @@ const toggleMenu = () => PANELS.menu.open ? closePanel('menu') : openPanel('menu
 // Naval battles: pirates hunt at sea; SPACE fires a broadside
 // ---------------------------------------------------------------------------
 const battleHud = document.getElementById('battle-hud');
-const PIRATE_SHIPS = ['Brigantine', 'Nao', 'Galleon', 'Carrack'];
+const PIRATE_SHIPS = BALANCE.pirateShips;   // 海盗船型池（balance.json 可改）
 let pirates = [];             // overworld NPC ships hunting the player
 let battle = null;            // {enemy, balls, cd}
 let pirateTimer = 30;         // seconds until next spawn check
