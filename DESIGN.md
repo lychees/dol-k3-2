@@ -28,6 +28,7 @@ game/
   randomizer.js     seeded world/economy generator (imported by main.js)
   lib/three.module.js
   assets/           generated from the uw2ol repo by tools/
+  editor/           browser-based data editors (no build step; see editor/FORMATS.md)
 tools/              asset pipeline (Python): prepare_assets.py, prepare_port_assets.py
 tests/              Playwright suites (+ tests/screenshots/)
 server/             MP backend prototype: asyncio websockets + SQLite, DI container

@@ -46,10 +46,51 @@ python -m http.server 8734
 # open http://127.0.0.1:8734
 ```
 
+## Editor suite
+
+`game/editor/` is a set of browser-based editors for the game data (no build
+step, same conventions as the game). Serve `game/` as above and open
+`http://127.0.0.1:8734/editor/`:
+
+- **World map editor** (`map.html`) — paint the 2160×1080 `world_map.bin`
+  with the day tileset: brush/rect/fill/eyedropper, wrap-aware, undo/redo,
+  port & discovery overlays, import/export the .bin
+- **Random map viewer** (`rando.html`) — preview the randomizer's generated
+  world for any seed (identical to in-game generation), with port/discovery
+  relocation preview and PNG export
+- **Port map editor** (`portmap.html`) — edit the 101 96×96 port scenes in
+  `portmaps.bin` with the correct per-port PORTCHIP tileset; building overlay
+- **Ship editor** (`ships.html`) — all 22 ship types in `ships.json`, with
+  ship image preview
+- **Character editor** (`mates.html`) — 50 mates + 28 barmaids + the 4
+  original characters (Isabella's companions, `mates_extra.json`), portrait
+  picker over `figures.png` and the waifu portraits
+- **Story editor** (`story.html`) — the 7 protagonists' main storylines in
+  `story.json` (chapter name/goal/reward/text), with an in-game-style
+  dialog preview
+- **Hero/monster editor** (`hero.html`) — the CRPG layer: hero six-attribute
+  stats, growth formulas (HP/SP/atk/def, exp curve, weapon/armor tiers,
+  mate-skill leveling) in `heroes.json`, and the land-expedition monsters
+  in `monsters.json` (with art picker), plus a live stat preview
+- **Economy editor** (`goods.html`) — 13 regions × 46 goods price matrix and
+  per-port specialties in `goods.json`
+- **Port editor** (`ports.html`) — drag ports on the world map, edit
+  region/tileset/maid/building positions (`ports.json` + `port_meta.json`)
+- **Discovery/town/ruin editor** (`world.html`) — `villages.json` (with art
+  picker), `towns.json`, `ruins.json`, click-to-place on the world map
+- **Asset browser** (`assets.html`) — every tileset/sprite/portrait atlas,
+  music & SFX player
+
+Every editor loads from `assets/`, and exports the modified file as a
+download — overwrite the file in `game/assets/` to apply. See
+`game/editor/FORMATS.md` for the data format reference.
+
 ## Repository layout
 
 - `game/` — the web game (static site, deployed via GitHub Pages)
   - `index.html`, `main.js`, `lib/three.module.js`, `assets/`
+  - `editor/` — browser-based data editors (world map, port maps, ships,
+    mates, economy, ports, discoveries, asset browser); see `editor/FORMATS.md`
 - `tools/` — asset pipeline scripts (require a local clone of uw2ol in `./uw2ol`)
   - `prepare_assets.py` — world map, tiles, sprites, ports
   - `prepare_port_assets.py` — port maps, buildings, goods, ships, mates, music

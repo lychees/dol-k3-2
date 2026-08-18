@@ -36,7 +36,7 @@ const mdMode = localStorage.getItem(MD_KEY) === '1';
 // ---------------------------------------------------------------------------
 // Boot: load all assets, then init
 // ---------------------------------------------------------------------------
-const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, shipData, matesData, maidsData, towns, ruins, shipTex, personTex, npcAtlasTex, heroesTex] =
+const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, shipData, matesData, maidsData, towns, ruins, storyData, matesExtra, heroesData, monstersData, shipTex, personTex, npcAtlasTex, heroesTex] =
   await Promise.all([
     fetch('./assets/world_map.bin').then(r => r.arrayBuffer()),
     fetch('./assets/portmaps.bin').then(r => r.arrayBuffer()),
@@ -50,6 +50,16 @@ const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, 
     fetch('./assets/maids.json').then(r => r.json()),
     fetch('./assets/towns.json').then(r => r.json()),
     fetch('./assets/ruins.json').then(r => r.json()),
+    // story.json overrides STORYLINES data fields (name/goal/reward/text);
+    // missing file just keeps the built-in story
+    fetch('./assets/story.json').then(r => r.ok ? r.json() : null).catch(() => null),
+    // mates_extra.json overrides the injected original characters (id > 50);
+    // missing file keeps the built-in originals below
+    fetch('./assets/mates_extra.json').then(r => r.ok ? r.json() : null).catch(() => null),
+    // heroes.json overrides HERO_ATTRS + the growth formula coefficients;
+    // monsters.json overrides LAND_MONSTERS. Missing files keep built-ins.
+    fetch('./assets/heroes.json').then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch('./assets/monsters.json').then(r => r.ok ? r.json() : null).catch(() => null),
     loadTex('./assets/ship-tileset.png', false),
     loadTex('./assets/person-tileset.png', false),
     loadTex('./assets/npc_atlas.png', false),
@@ -65,6 +75,8 @@ Object.assign(matesData, {
   53: { name: 'Sophia', nation: 'Portugal', lv: 2, leadership: 40, seamanship: 50, knowledge: 65, intuition: 60, courage: 40, swordplay: 35, luck: 60, accounting: 60, gunnery: 15, navigation: 40, image: [1, 1], portrait: './assets/waifu/sophia.png' },
   54: { name: 'Barbara', nation: 'Portugal', lv: 2, leadership: 50, seamanship: 55, knowledge: 45, intuition: 50, courage: 65, swordplay: 60, luck: 50, accounting: 25, gunnery: 40, navigation: 45, image: [1, 1], portrait: './assets/waifu/barbara.png' },
 });
+// assets/mates_extra.json (edited with editor/mates.html) overrides the originals above
+if (matesExtra) Object.assign(matesData, matesExtra);
 
 const phaseNames = ['dawn', 'day', 'dusk', 'night'];
 const phaseTex = {};
@@ -452,7 +464,7 @@ const CHARACTER_NAMES = ['João Ferrero', 'Catalina Erantzo', 'Otto Baynes',
 // hero nationalities (index matches CHARACTER_NAMES)
 const HERO_NATION = ['Portugal', 'Spain', 'England', 'Holland', 'Italy', 'Turkey', 'Portugal'];
 // hero CRPG base attributes {str, agi, con, int, per, cha} (3-18), themed per character
-const HERO_ATTRS = [
+let HERO_ATTRS = [
   { str: 12, agi: 12, con: 12, int: 12, per: 12, cha: 14 },  // João — balanced leader
   { str: 14, agi: 14, con: 12, int: 10, per: 12, cha: 12 },  // Catalina — fierce pirate
   { str: 15, agi: 11, con: 14, int: 10, per: 10, cha: 13 },  // Otto — stalwart knight
@@ -461,6 +473,26 @@ const HERO_ATTRS = [
   { str: 10, agi: 12, con: 11, int: 13, per: 12, cha: 15 },  // Ali — charming merchant
   { str: 8, agi: 11, con: 10, int: 16, per: 13, cha: 12 },   // Isabella — scholar
 ];
+// assets/heroes.json (edited with editor/hero.html) overrides hero attrs + growth formulas
+if (heroesData?.attrs) HERO_ATTRS = heroesData.attrs;
+
+// 养成公式系数（heroes.json 的 growth 字段可覆盖；各项含义见 editor/FORMATS.md）
+const GROWTH = {
+  maxHp: { base: 20, perLv: 8, conMul: 2 },        // maxHp = base + perLv*lv + con*conMul
+  maxSp: { base: 10, perLv: 2, intMul: 1, perMul: 1 }, // maxSp = base + perLv*lv + int*intMul + per*perMul
+  atk: { base: 4, perLv: 2, strDiv: 5, fatigueFactor: 0.75 }, // atk = (base + perLv*lv + weaponBonus + str/strDiv) * (疲劳≥90 ? fatigueFactor : 1)
+  defLvDiv: 2,                   // def = lv/defLvDiv + armorBonus
+  expPerLv: 20,                  // 升级所需 exp = lv * expPerLv
+  weaponBonus: [0, 4, 8, 14],    // 武器 tier 0–3 的 atk 加成
+  armorBonus: [0, 2, 5, 9],      // 护甲 tier 0–3 的 def 加成
+  mateSkill: { maxLv: 10, xpPerLv: 10, statDiv: 25 }, // 伙伴技能：lv = clamp(1..maxLv, stat/statDiv + 加成)，升级 xp = lv * xpPerLv
+};
+if (heroesData?.growth) {
+  for (const [k, v] of Object.entries(heroesData.growth)) {
+    if (v && typeof v === 'object' && !Array.isArray(v) && GROWTH[k] && typeof GROWTH[k] === 'object' && !Array.isArray(GROWTH[k])) Object.assign(GROWTH[k], v);
+    else GROWTH[k] = v;
+  }
+}
 
 // Main storylines — one per hero, 5 chapters each. check() = completion condition,
 // progress() = "cur/goal" text, reward = gold, text = narrative beat on completion.
@@ -581,6 +613,24 @@ const STORYLINES = [
       check: () => P.fame >= 20, progress: () => `${Math.min(P.fame, 20)}/20 fame`, reward: 10000,
       text: 'With the spiritual power gathered, you open the way home and see Yudora safely back to her own world. Your fantastical journey becomes legend, Isabella!' } ] },
 ];
+
+// assets/story.json (edited with editor/story.html) overrides the data fields
+// of STORYLINES — name/goal/reward/text only; check()/progress() stay in code.
+if (storyData) {
+  STORYLINES.forEach((line, li) => {
+    const over = storyData[li];
+    if (!over) return;
+    if (over.title) line.title = over.title;
+    (over.steps ?? []).forEach((st, si) => {
+      const step = line.steps[si];
+      if (!step) return;
+      if (st.name !== undefined) step.name = st.name;
+      if (st.goal !== undefined) step.goal = st.goal;
+      if (st.reward !== undefined) step.reward = st.reward;
+      if (st.text !== undefined) step.text = st.text;
+    });
+  });
+}
 
 // recolored DOS hero portraits (first 6 of assets_dos/portraits/portraits.png, in CHARACTER_NAMES order)
 const DOS_PORTRAIT = {
@@ -1358,7 +1408,7 @@ function updateLandPersonSprite() {
   heroFrame(landPersonMap, landDir, animFrame, P.character);
 }
 
-const LAND_MONSTERS = [
+let LAND_MONSTERS = [
   { name: 'Prairie Dog', img: [3, 5], hp: 8,  atk: 3,  def: 0, exp: 4,  gold: 5 },
   { name: 'Tree Snake',  img: [1, 4], hp: 12, atk: 5,  def: 0, exp: 7,  gold: 8 },
   { name: 'Python',      img: [16, 3], hp: 18, atk: 7, def: 1, exp: 12, gold: 12 },
@@ -1368,22 +1418,24 @@ const LAND_MONSTERS = [
   { name: 'Saber-toothed Tiger', img: [2, 2], hp: 50, atk: 15, def: 4, exp: 45, gold: 40 },
   { name: 'Blue Whale',  img: [9, 1], hp: 80, atk: 18, def: 6, exp: 80, gold: 100 },
 ];
+// assets/monsters.json (edited with editor/hero.html) overrides the table above
+if (monstersData) LAND_MONSTERS = monstersData;
 let landBattle = null;    // {enemy, log[], round}
 let encounterT = 2;       // seconds of walking before next possible encounter
 
-const heroMaxHp = () => 20 + 8 * P.hero.lv + HERO_ATTRS[P.character].con * 2;
-const heroMaxSp = () => 10 + 2 * P.hero.lv + HERO_ATTRS[P.character].int + HERO_ATTRS[P.character].per;
+const heroMaxHp = () => GROWTH.maxHp.base + GROWTH.maxHp.perLv * P.hero.lv + HERO_ATTRS[P.character].con * GROWTH.maxHp.conMul;
+const heroMaxSp = () => GROWTH.maxSp.base + GROWTH.maxSp.perLv * P.hero.lv + HERO_ATTRS[P.character].int * GROWTH.maxSp.intMul + HERO_ATTRS[P.character].per * GROWTH.maxSp.perMul;
 // apply pending hero level-ups from stored exp; log each one to `logArr`
 function heroLevelUps(logArr) {
-  while (P.hero.exp >= P.hero.lv * 20) {
-    P.hero.exp -= P.hero.lv * 20;
+  while (P.hero.exp >= P.hero.lv * GROWTH.expPerLv) {
+    P.hero.exp -= P.hero.lv * GROWTH.expPerLv;
     P.hero.lv++;
     P.hero.hp = heroMaxHp();
     logArr.push(`Level up! ${CHARACTER_NAMES[P.character]} is now lv ${P.hero.lv}!`);
   }
 }
-const heroAtk = () => Math.max(1, Math.round((4 + 2 * P.hero.lv + [0, 4, 8, 14][P.hero.weapon] + Math.floor(HERO_ATTRS[P.character].str / 5)) * (P.fatigue >= 90 ? 0.75 : 1)));
-const heroDef = () => Math.floor(P.hero.lv / 2) + [0, 2, 5, 9][P.hero.armor];
+const heroAtk = () => Math.max(1, Math.round((GROWTH.atk.base + GROWTH.atk.perLv * P.hero.lv + GROWTH.weaponBonus[P.hero.weapon] + Math.floor(HERO_ATTRS[P.character].str / GROWTH.atk.strDiv)) * (P.fatigue >= 90 ? GROWTH.atk.fatigueFactor : 1)));
+const heroDef = () => Math.floor(P.hero.lv / GROWTH.defLvDiv) + GROWTH.armorBonus[P.hero.armor];
 const mateMaxHp = id => 15 + 5 * (matesData[id]?.lv ?? 1) + Math.floor(mateAttrs(id).con / 3);
 const mateMaxSp = id => 10 + 2 * (matesData[id]?.lv ?? 1) + Math.floor(mateAttrs(id).int / 2);
 const mateAtk = id => 3 + (matesData[id]?.lv ?? 1) + Math.floor((matesData[id]?.swordplay ?? 0) / 20) + Math.floor(mateAttrs(id).str / 5);
@@ -2050,7 +2102,7 @@ function initMateSkills(id) {
   P.mateSkillXp = P.mateSkillXp ?? {};
   if (P.mateSkills[id]) return P.mateSkills[id];
   const m = matesData[id];
-  const lv = (stat, special) => Math.max(1, Math.min(10, Math.floor(stat / 25) + (special ?? 0)));
+  const lv = (stat, special) => Math.max(1, Math.min(GROWTH.mateSkill.maxLv, Math.floor(stat / GROWTH.mateSkill.statDiv) + (special ?? 0)));
   P.mateSkills[id] = {
     leadership: lv(m.leadership), steering: lv(m.seamanship), surgery: lv(m.knowledge),
     lookout: lv(m.intuition), swordplay: lv(m.swordplay), fortune: lv(m.luck),
@@ -2069,7 +2121,7 @@ function gainSkillXp(id, skill, xp) {
   initMateSkills(id);
   P.mateSkillXp[id][skill] = (P.mateSkillXp[id][skill] ?? 0) + xp;
   const lv = P.mateSkills[id][skill];
-  if (lv < 10 && P.mateSkillXp[id][skill] >= lv * 10) {
+  if (lv < GROWTH.mateSkill.maxLv && P.mateSkillXp[id][skill] >= lv * GROWTH.mateSkill.xpPerLv) {
     P.mateSkillXp[id][skill] = 0;
     P.mateSkills[id][skill] = lv + 1;
     showBanner(`${matesData[id].name}'s ${SKILL_LABEL[skill]} reached Lv${lv + 1}!`);
