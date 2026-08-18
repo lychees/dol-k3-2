@@ -202,7 +202,7 @@ files keep the built-ins, so the game is fully backward compatible):
 | File | Overrides | Editor |
 |---|---|---|
 | `story.json` | `STORYLINES` display fields (name/goal/reward/text; check/progress stay in code) | `editor/story.html` |
-| `heroes.json` | `HERO_ATTRS` + `GROWTH` formula coefficients | `editor/hero.html` |
+| `heroes.json` | `HERO_ATTRS` + `GROWTH` coefficients + gameplay params (titles, encounters, monster scaling, skill XP, hero item shop) | `editor/hero.html` |
 | `monsters.json` | `LAND_MONSTERS` | `editor/hero.html` |
 | `mates_extra.json` | original characters (mate id > 50, Isabella's party) | `editor/mates.html` |
 | `equipment.json` | `OUTFIT_ITEMS` / `CABIN_TYPES` / `CABIN_DEFAULTS` | `editor/outfit.html` |

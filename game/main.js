@@ -529,6 +529,29 @@ const BALANCE = {
   pirateRate: 25,
 };
 if (balanceData) Object.assign(BALANCE, balanceData);
+
+// 养成玩法参数（heroes.json 可选覆盖；见 editor/FORMATS.md）
+const MONSTER_SCALE = heroesData?.monsterScalePerLv ?? 0.25;  // 怪物属性随英雄等级缩放系数
+const ENCOUNTER = { first: 2, afterBattle: 4, min: 6, rand: 8, ...(heroesData?.encounter ?? {}) };
+const SKILL_XP = { cabinDaily: 1, battleSwordplay: 5, battleLeadership: 2, ...(heroesData?.skillXp ?? {}) };
+const HERO_SHOP = {   // 道具店英雄装备（攻/防加成数值取 GROWTH.weaponBonus/armorBonus，单一来源）
+  weapons: [
+    { name: 'Cutlass', cost: 500, desc: 'A fine cutlass for your expeditions ashore.' },
+    { name: 'Rapier', cost: 2000, desc: 'An elegant rapier.' },
+    { name: 'Saber', cost: 8000, desc: 'A masterwork saber.' } ],
+  armors: [
+    { name: 'Leather armor', cost: 400, desc: 'Sturdy leather armor.' },
+    { name: 'Chain mail', cost: 1500, desc: 'Rings of steel.' },
+    { name: 'Plate armor', cost: 6000, desc: "A knight's plate." } ],
+  balm: { cost: 100, heal: 30, desc: 'A fragrant healing balm.' },
+  telescope: { cost: 2000, desc: 'With the telescope you can spot interesting sites from much farther away.' },
+};
+if (heroesData?.heroShop) {
+  for (const [k, v] of Object.entries(heroesData.heroShop)) {
+    if (Array.isArray(v) && Array.isArray(HERO_SHOP[k])) v.forEach((it, i) => HERO_SHOP[k][i] = { ...HERO_SHOP[k][i], ...it });
+    else if (v && typeof v === 'object') Object.assign(HERO_SHOP[k], v);
+  }
+}
 DAY_LENGTH_SEC = BALANCE.dayLengthSec;
 SAIL_DAY_SCALE = BALANCE.sailDayScale;
 
@@ -1459,7 +1482,7 @@ let LAND_MONSTERS = [
 // assets/monsters.json (edited with editor/hero.html) overrides the table above
 if (monstersData) LAND_MONSTERS = monstersData;
 let landBattle = null;    // {enemy, log[], round}
-let encounterT = 2;       // seconds of walking before next possible encounter
+let encounterT = ENCOUNTER.first;   // seconds of walking before next possible encounter
 
 const heroMaxHp = () => GROWTH.maxHp.base + GROWTH.maxHp.perLv * P.hero.lv + HERO_ATTRS[P.character].con * GROWTH.maxHp.conMul;
 const heroMaxSp = () => GROWTH.maxSp.base + GROWTH.maxSp.perLv * P.hero.lv + HERO_ATTRS[P.character].int * GROWTH.maxSp.intMul + HERO_ATTRS[P.character].per * GROWTH.maxSp.perMul;
@@ -1579,7 +1602,7 @@ function startLandBattle() {
   const tier = Math.max(0, Math.min(LAND_MONSTERS.length - 1,
                  P.hero.lv - 1 + Math.floor(Math.random() * 3) - 1));
   const base = LAND_MONSTERS[tier];
-  const lvScale = 1 + (P.hero.lv - 1) * 0.25;
+  const lvScale = 1 + (P.hero.lv - 1) * MONSTER_SCALE;
   const enemy = {
     name: base.name, img: base.img,
     hp: Math.round(base.hp * lvScale), maxHp: Math.round(base.hp * lvScale),
@@ -1619,7 +1642,7 @@ function landBattleTurn(action) {
     if (P.hero.balms <= 0) { bt.log.push('No balms left!'); renderLandBattle(); return; }
     P.hero.balms--;
     const target = members.reduce((a, b) => (a.hp / a.maxHp < b.hp / b.maxHp ? a : b));
-    const heal = 30;
+    const heal = HERO_SHOP.balm.heal;
     applyMemberHeal(target, heal);
     bt.log.push(`Used a balm — ${target.name} recovers ${heal} HP.`);
   } else {
@@ -1739,7 +1762,7 @@ function closeLandBattle() {
   landBattle = null;
   renderLandBattle();
   playMusic(seaMusicFor(portId ?? 1));
-  encounterT = 4;   // brief peace after a fight
+  encounterT = ENCOUNTER.afterBattle;   // brief peace after a fight
 }
 
 // ---------------------------------------------------------------------------
@@ -1943,8 +1966,9 @@ const SHIPS = Object.entries(shipData).map(([name, a]) => ({
 })).sort((x, y) => x.price - y.price);
 const shipByName = n => SHIPS.find(s => s.name === n) ?? SHIPS[0];
 
-const TITLES = [[50, 'Duke'], [40, 'Marquis'], [30, 'Earl'], [20, 'Viscount'],
-                [15, 'Baron'], [10, 'Knight'], [5, 'Squire'], [0, '']];
+let TITLES = [[50, 'Duke'], [40, 'Marquis'], [30, 'Earl'], [20, 'Viscount'],
+               [15, 'Baron'], [10, 'Knight'], [5, 'Squire'], [0, '']];
+if (heroesData?.titles) TITLES = heroesData.titles;   // 声望头衔阈值（heroes.json 可改）
 
 const SAVE_KEY = 'uw-save-v1';
 let P = {
@@ -2366,7 +2390,7 @@ function onNewDay() {
   for (const [idStr, key] of Object.entries(P.shipCabins)) {
     const [i, j] = key.split(':').map(Number);
     const type = P.fleet[i] && cabinsOf(i)[j];
-    if (type) gainSkillXp(+idStr, CABIN_SKILL[type], 1);
+    if (type) gainSkillXp(+idStr, CABIN_SKILL[type], SKILL_XP.cabinDaily);
   }
   // SP regenerates daily (hero + mates)
   P.hero.sp = Math.min(heroMaxSp(), P.hero.sp + 1);
@@ -2431,6 +2455,33 @@ const FORTUNES = [
   'The stars favor the bold. Sail far.',
   'Storm clouds gather, but your ship is sturdy.',
 ];
+
+// 道具店的英雄装备条目（数据见 HERO_SHOP / heroes.json 的 heroShop 字段；
+// 攻/防加成取 GROWTH.weaponBonus/armorBonus —— 数值与战斗公式单一来源）
+function heroShopEntries() {
+  const out = [];
+  HERO_SHOP.weapons.forEach((w, i) => {
+    const tier = i + 1, bonus = GROWTH.weaponBonus[tier];
+    out.push({ label: `${w.name} (+${bonus} hero atk)`, cost: w.cost, disabled: P.hero.weapon >= tier,
+      action() { P.gold -= w.cost; P.hero.weapon = tier;
+                 setBuildingText(`${w.desc} (+${bonus} attack)`); } });
+  });
+  HERO_SHOP.armors.forEach((a, i) => {
+    const tier = i + 1, bonus = GROWTH.armorBonus[tier];
+    out.push({ label: `${a.name} (+${bonus} hero def)`, cost: a.cost, disabled: P.hero.armor >= tier,
+      action() { P.gold -= a.cost; P.hero.armor = tier;
+                 setBuildingText(`${a.desc} (+${bonus} defense)`); } });
+  });
+  const b = HERO_SHOP.balm;
+  out.push({ label: `Balm (heal ${b.heal} HP in battle)`, cost: b.cost,
+    action() { P.gold -= b.cost; P.hero.balms++;
+               setBuildingText(`${b.desc} (you have ${P.hero.balms})`); } });
+  const t = HERO_SHOP.telescope;
+  out.push({ label: 'Telescope (spot discoveries from afar)', cost: t.cost, disabled: P.telescope,
+    action() { P.gold -= t.cost; P.telescope = true;
+               setBuildingText(t.desc); } });
+  return out;
+}
 
 function buildingMenu(b) {
   if (!b) return [];
@@ -2804,30 +2855,7 @@ function buildingMenu(b) {
       ];
     }
     case 'item_shop': return [
-      { label: 'Cutlass (+4 hero atk)', cost: 500, disabled: P.hero.weapon >= 1,
-        action() { P.gold -= 500; P.hero.weapon = 1;
-                   setBuildingText('A fine cutlass for your expeditions ashore. (+4 attack)'); } },
-      { label: 'Rapier (+8 hero atk)', cost: 2000, disabled: P.hero.weapon >= 2,
-        action() { P.gold -= 2000; P.hero.weapon = 2;
-                   setBuildingText('An elegant rapier. (+8 attack)'); } },
-      { label: 'Saber (+14 hero atk)', cost: 8000, disabled: P.hero.weapon >= 3,
-        action() { P.gold -= 8000; P.hero.weapon = 3;
-                   setBuildingText('A masterwork saber. (+14 attack)'); } },
-      { label: 'Leather armor (+2 hero def)', cost: 400, disabled: P.hero.armor >= 1,
-        action() { P.gold -= 400; P.hero.armor = 1;
-                   setBuildingText('Sturdy leather armor. (+2 defense)'); } },
-      { label: 'Chain mail (+5 hero def)', cost: 1500, disabled: P.hero.armor >= 2,
-        action() { P.gold -= 1500; P.hero.armor = 2;
-                   setBuildingText('Rings of steel. (+5 defense)'); } },
-      { label: 'Plate armor (+9 hero def)', cost: 6000, disabled: P.hero.armor >= 3,
-        action() { P.gold -= 6000; P.hero.armor = 3;
-                   setBuildingText('A knight\'s plate. (+9 defense)'); } },
-      { label: 'Balm (heal 30 HP in battle)', cost: 100,
-        action() { P.gold -= 100; P.hero.balms++;
-                   setBuildingText(`A fragrant healing balm. (you have ${P.hero.balms})`); } },
-      { label: 'Telescope (spot discoveries from afar)', cost: 2000, disabled: P.telescope,
-        action() { P.gold -= 2000; P.telescope = true;
-                   setBuildingText('With the telescope you can spot interesting sites from much farther away.'); } },
+      ...heroShopEntries(),
       { label: 'Water (+50, 50g)', cost: 50, disabled: cargoSpace() < 1,
         action() { const n = Math.min(50, cargoSpace()); P.gold -= n; P.water += n;
                    setBuildingText('Fresh water stowed aboard.'); } },
@@ -3853,8 +3881,8 @@ function boardingMelee(byPlayer) {
     P.crew = Math.max(0, P.crew - Math.max(1, Math.round(e.crew * 0.2 * (0.8 + Math.random() * 0.4))));
   }
   for (const id of Object.keys(P.shipCabins)) {
-    gainSkillXp(+id, 'swordplay', 5);
-    gainSkillXp(+id, 'leadership', 2);
+    gainSkillXp(+id, 'swordplay', SKILL_XP.battleSwordplay);
+    gainSkillXp(+id, 'leadership', SKILL_XP.battleLeadership);
   }
   save();
   if (e.crew <= 0) {
@@ -5001,7 +5029,7 @@ function tick() {
       // random encounters while walking
       encounterT -= dt;
       if (encounterT <= 0) {
-        encounterT = 6 + Math.random() * 8;
+        encounterT = ENCOUNTER.min + Math.random() * ENCOUNTER.rand;
         if (Math.random() < 0.4) startLandBattle();
       }
 
