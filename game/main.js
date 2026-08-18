@@ -1,5 +1,10 @@
 import * as THREE from 'three';
 import { applyRandomizer, generateWorldMap, mulberry32, hashSeed } from './randomizer.js';
+import { gvoImage, gvoGoodIconURL, gvoDiscArtPath, gvoDiscHas } from './gvo.js';
+
+// --- asset pack: 经典 UW2 素材 vs GVO Online 素材（dol-rev），开始界面可选 ---
+let assetPack = localStorage.getItem('uw-asset-pack') ?? 'classic';
+const isGvo = () => assetPack === 'gvo';
 
 // ---------------------------------------------------------------------------
 // Constants (from uw2ol: code/common/constants.py)
@@ -1657,6 +1662,21 @@ function endLandBattle(won) {
   renderLandBattle();
 }
 
+// 在 canvas 上绘制发现物/怪物图像：GVO 素材包且有对应大图时优先（异步加载完成后覆盖），
+// 否则（或加载前）绘制 DOS 49px 图集格。cell = discoveries.png 的 1-based [列, 行]。
+const villageIdByName = name => villages.find(v => v.name === name)?.id ?? null;
+function drawDiscoveryInto(cv, cell, villageId) {
+  const g = cv.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  g.clearRect(0, 0, cv.width, cv.height);
+  g.drawImage(discoveryImg, (cell[0] - 1) * 49, (cell[1] - 1) * 49, 49, 49, 0, 0, cv.width, cv.height);
+  if (villageId != null && isGvo() && gvoDiscHas(villageId)) {
+    gvoImage(gvoDiscArtPath(villageId)).then(img => {
+      if (img) { g.clearRect(0, 0, cv.width, cv.height); g.drawImage(img, 0, 0, cv.width, cv.height); }
+    });
+  }
+}
+
 const landBattlePanel = document.getElementById('land-battle');
 function renderLandBattle() {
   if (!landBattle) { landBattlePanel.style.display = 'none'; return; }
@@ -1665,10 +1685,7 @@ function renderLandBattle() {
   document.getElementById('lb-enemy-name').textContent = `${e.name}`;
   document.getElementById('lb-enemy-hp').style.width = `${Math.max(0, e.hp) / e.maxHp * 100}%`;
   const cv = document.getElementById('lb-enemy-img');
-  const g = cv.getContext('2d');
-  g.imageSmoothingEnabled = false;
-  g.clearRect(0, 0, cv.width, cv.height);
-  g.drawImage(discoveryImg, (e.img[0] - 1) * 49, (e.img[1] - 1) * 49, 49, 49, 0, 0, cv.width, cv.height);
+  drawDiscoveryInto(cv, e.img, villageIdByName(e.name));
   // party
   const pd = document.getElementById('lb-party');
   pd.innerHTML = '';
@@ -2853,6 +2870,11 @@ for (const c of Object.values(GOOD_CATS)) for (const g of c.goods) goodCat[g] = 
 const iconCache = {};
 function goodIcon(name) {
   if (iconCache[name]) return iconCache[name];
+  // GVO 素材包：优先使用 dol-rev 的商品图标（跨域加载，失败时 <img> 会回退 onerror）
+  if (isGvo()) {
+    const u = gvoGoodIconURL(name);
+    if (u) return iconCache[name] = u;
+  }
   const c = document.createElement('canvas');
   c.width = c.height = 22;
   const g = c.getContext('2d');
@@ -3572,7 +3594,7 @@ const MENU_RENDER = {
       if (!list) continue;
       html += `<h3 style="color:#ffd94d;margin:8px 0 2px">${label} (${list.length})</h3>`;
       for (const v of list) {
-        html += `<div class="mate-card"><canvas class="disc-thumb" data-img="${v.img[0]},${v.img[1]}" ` +
+        html += `<div class="mate-card"><canvas class="disc-thumb" data-img="${v.img[0]},${v.img[1]}" data-vid="${v.id}" ` +
           `width="49" height="49" style="image-rendering:pixelated;border:1px solid #8a6d3b;border-radius:3px"></canvas>` +
           `<div class="mate-stats"><b>${v.name}</b> · ${fmtLonLat(v.x, v.y)}<br>${v.desc.slice(0, 90)}…</div></div>`;
       }
@@ -3643,12 +3665,11 @@ const MENU_RENDER = {
 };
 
 // draw 49px discovery-sheet thumbnails into every .disc-thumb canvas under `root`
+// (GVO 素材包下，带 data-vid 且有映射的会先画 DOS 格再异步覆盖为 GVO 图)
 function drawDiscThumbs(root) {
   root.querySelectorAll('.disc-thumb').forEach(cv => {
     const [ix, iy] = cv.dataset.img.split(',').map(Number);
-    const g = cv.getContext('2d');
-    g.imageSmoothingEnabled = false;
-    g.drawImage(discoveryImg, (ix - 1) * 49, (iy - 1) * 49, 49, 49, 0, 0, 49, 49);
+    drawDiscoveryInto(cv, [ix, iy], cv.dataset.vid ? +cv.dataset.vid : null);
   });
 }
 
@@ -4064,12 +4085,9 @@ function goAshore(v) {
   document.getElementById('discovery-name').textContent = v.name;
   document.getElementById('discovery-text').textContent = v.desc;
   // crop 49px cell from the discoveries sheet (16 cols x 8 rows)
+  // (GVO 素材包下会异步覆盖为 dol-rev 的 128px 大图)
   const cv = document.getElementById('discovery-img');
-  const g = cv.getContext('2d');
-  g.imageSmoothingEnabled = false;
-  g.clearRect(0, 0, cv.width, cv.height);
-  g.drawImage(discoveryImg, (v.img[0] - 1) * 49, (v.img[1] - 1) * 49, 49, 49,
-              0, 0, cv.width, cv.height);
+  drawDiscoveryInto(cv, v.img, v.id);
   discoveryPanel.style.display = 'block';
 }
 
@@ -4332,7 +4350,7 @@ const DEV_RENDER = {
   monsters() {
     let html = `<p>${LAND_MONSTERS.length} wild monsters (strength scales with hero level)</p>`;
     for (const m of LAND_MONSTERS) {
-      html += `<div class="mate-card"><canvas class="disc-thumb" data-img="${m.img[0]},${m.img[1]}" ` +
+      html += `<div class="mate-card"><canvas class="disc-thumb" data-img="${m.img[0]},${m.img[1]}" data-vid="${villageIdByName(m.name) ?? ''}" ` +
         `width="49" height="49" style="image-rendering:pixelated;border:1px solid #8a6d3b;border-radius:3px"></canvas>` +
         `<div class="mate-stats"><b>${m.name}</b><br>hp ${m.hp} · atk ${m.atk} · def ${m.def} · ` +
         `exp ${m.exp} · gold ${m.gold}</div></div>`;
@@ -4366,7 +4384,7 @@ const DEV_RENDER = {
       html += `<h3 style="color:#ffd94d;margin:8px 0 2px">${label} (${list.length})</h3>`;
       for (const v of list) {
         const found = discoveriesFound.has(v.id);
-        html += `<div class="mate-card"><canvas class="disc-thumb" data-img="${v.img[0]},${v.img[1]}" ` +
+        html += `<div class="mate-card"><canvas class="disc-thumb" data-img="${v.img[0]},${v.img[1]}" data-vid="${v.id}" ` +
           `width="49" height="49" style="image-rendering:pixelated;border:1px solid #8a6d3b;border-radius:3px"></canvas>` +
           `<div class="mate-stats"><b>${v.name}</b>${found ? ' ★' : ''} · ${fmtLonLat(v.x, v.y)}<br>` +
           `${v.desc.slice(0, 90)}…</div></div>`;
@@ -4637,6 +4655,27 @@ window.UW = {
   document.getElementById('char-name').textContent = CHARACTER_NAMES[P.character];
 }
 
+// asset pack picker (classic UW2 vs GVO Online assets from dol-rev)
+{
+  const box = document.getElementById('pack-select');
+  const note = document.getElementById('pack-note');
+  const NOTES = {
+    classic: '原版 DOS 素材（uw2ol）— 全部内容完整覆盖',
+    gvo: '大航海时代 Online 素材（dol-rev，跨域加载）— 44 种商品图标 + 59 处发现物大图，其余回退经典素材',
+  };
+  const sync = () => {
+    box.querySelectorAll('button').forEach(b =>
+      b.classList.toggle('active', b.dataset.pack === assetPack));
+    note.textContent = NOTES[assetPack] ?? '';
+  };
+  box.querySelectorAll('button').forEach(b => b.onclick = () => {
+    assetPack = b.dataset.pack;
+    localStorage.setItem('uw-asset-pack', assetPack);
+    sync();
+  });
+  sync();
+}
+
 document.getElementById('ruin-continue').onclick = () => ruinNext();
 document.getElementById('ruin-leave').onclick = () => ruinFlee();
 document.getElementById('lb-attack').onclick = () => landBattleTurn('attack');
@@ -4680,7 +4719,7 @@ document.getElementById('rando-start').addEventListener('click', e => {
 });
 
 document.getElementById('start-overlay').addEventListener('click', function (e) {
-  if (e.target.closest('#char-select') || e.target.closest('#rando-box') || started) return;   // picking a hero / using randomizer panel
+  if (e.target.closest('#char-select') || e.target.closest('#rando-box') || e.target.closest('#pack-select') || started) return;   // picking a hero / randomizer panel / asset pack
   this.style.display = 'none';
   started = true;
   // Isabella starts with her party of 4 companions (Eudora, Mita, Sophia, Barbara)

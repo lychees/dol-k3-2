@@ -22,6 +22,9 @@ Design doc: [DESIGN.md](DESIGN.md) · Dev log: [SESSION.md](SESSION.md)
   hero levels & equipment, 98 discovery sites
 - 🧑‍🤝‍🧑 50 recruitable mates, 3 protagonists, port NPCs with dialog
 - 🎵 Regional BGM (port/sea), sound effects
+- 🖼️ Optional **GVO asset pack** (Uncharted Waters Online artwork from
+  [dol-rev](https://github.com/lychees/dol-rev), loaded cross-origin):
+  goods icons + discovery artwork — pick your pack on the start screen
 
 ## Controls
 

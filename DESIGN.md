@@ -14,6 +14,13 @@ fatigue → crew deaths → game over) driving route planning.
 Optional **randomizer mode** (UWNHRando-style) reshuffles the economy,
 ports, discoveries and can regenerate the entire world map from a seed.
 
+Optional **GVO asset pack**: the start screen offers a choice between the
+classic UW2 (uw2ol) assets and Uncharted Waters Online artwork from
+[dol-rev](https://github.com/lychees/dol-rev) (loaded cross-origin from its
+GitHub Pages site; `gvo.js` maps 44 goods icons + 59 discovery artworks by
+id; everything unmapped falls back to the classic assets). Persisted in
+localStorage `uw-asset-pack`.
+
 - Plain ES modules + import map (`three` from `game/lib/`); no bundler
 - All state in the browser (localStorage); no backend required for solo play
 - `server/` holds an **experimental multiplayer backend prototype**
