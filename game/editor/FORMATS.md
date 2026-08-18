@@ -112,6 +112,13 @@
   base + 船员×(minPct + random×randPct)）、pirateShips（海盗船型池）、pirateRate（海盗刷新秒，0=无）。
 - 游戏启动时读取覆盖内置值；文件缺失回退内置。副本 `editor/data/balance.json`。
 
+## lang_zh.json — 中文语言包
+- `{ goods, discoveries, ports, ships, monsters }`：商品/发现物/港口/船/怪物的显示名翻译；
+  discoveries 条目还可带 `d`（中文说明，取 GVO 数据的繁中原文）。
+- 开始界面选择「中文」后，main.js 在显示层替换名称（dispGood/dispPort/dispShip/dispDiscName 等）；
+  **逻辑内部键始终为英文**（cargo、shipData 键等），存档跨语言兼容。
+- 由 gvo_ref/gen_lang_zh.py 生成。
+
 ## towns.json — 内陆城镇
 - 数组：`[{ id, name, x, z }]`（z 即世界地图 y 坐标）。
 

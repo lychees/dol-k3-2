@@ -169,10 +169,10 @@ canvas { display: block; }
 #char-select { margin: 10px 0 4px; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
 #char-name { color: var(--gold); font-size: 17px; margin-top: 6px; min-height: 22px; }
 
-#pack-select { margin-top: 8px; font-size: 14px; color: var(--ink-dim); }
-#pack-select button { margin: 0 4px; }
-#pack-select button.active { background: var(--bg-btn-active); border-color: var(--gold); }
-#pack-note { display: block; font-size: 12px; margin-top: 4px; min-height: 16px; }
+#pack-select, #lang-select { margin-top: 8px; font-size: 14px; color: var(--ink-dim); }
+#pack-select button, #lang-select button { margin: 0 4px; }
+#pack-select button.active, #lang-select button.active { background: var(--bg-btn-active); border-color: var(--gold); }
+#pack-note, #lang-note { display: block; font-size: 12px; margin-top: 4px; min-height: 16px; }
 
 #rando-box { margin-top: 14px; font-size: 14px; color: var(--ink-dim);
              background: var(--bg-inset); border: 1px solid var(--bronze);

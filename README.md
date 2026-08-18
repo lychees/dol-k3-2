@@ -25,6 +25,9 @@ Design doc: [DESIGN.md](DESIGN.md) · Dev log: [SESSION.md](SESSION.md)
 - 🖼️ Optional **GVO asset pack** (Uncharted Waters Online artwork from
   [dol-rev](https://github.com/lychees/dol-rev), loaded cross-origin):
   goods icons + discovery artwork — pick your pack on the start screen
+- 🇨🇳 Optional **Chinese language pack** (`lang_zh.json`): goods, ports,
+  ships, discoveries and monster names display in Chinese — pick your
+  language on the start screen (display-layer only; saves stay compatible)
 
 ## Controls
 

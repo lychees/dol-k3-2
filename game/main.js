@@ -6,6 +6,20 @@ import { gvoImage, gvoGoodIconURL, gvoDiscArtPath, gvoDiscHas } from './gvo.js';
 let assetPack = localStorage.getItem('uw-asset-pack') ?? 'classic';
 const isGvo = () => assetPack === 'gvo';
 
+// --- 语言包：中文显示翻译（localStorage uw-lang；逻辑内部键始终为英文） ---
+let lang = localStorage.getItem('uw-lang') ?? 'en';
+const isZh = () => lang === 'zh' && !!langZh;
+const dispGood = n => isZh() ? (langZh.goods[n] ?? n) : n;
+const dispShip = n => isZh() ? (langZh.ships[n] ?? n) : n;
+const dispMonster = n => isZh() ? (langZh.monsters[n] ?? n) : n;
+const dispPort = p => isZh() ? (langZh.ports[String(p.id)] ?? p.name) : p.name;
+const dispPortById = id => {
+  const p = ports.find(x => x.id === id);
+  return p ? dispPort(p) : '';
+};
+const dispDiscName = v => isZh() ? (langZh.discoveries[v.name]?.n ?? v.name) : v.name;
+const dispDiscDesc = v => isZh() ? (langZh.discoveries[v.name]?.d ?? v.desc) : v.desc;
+
 // ---------------------------------------------------------------------------
 // Constants (from uw2ol: code/common/constants.py)
 // ---------------------------------------------------------------------------
@@ -41,7 +55,7 @@ const mdMode = localStorage.getItem(MD_KEY) === '1';
 // ---------------------------------------------------------------------------
 // Boot: load all assets, then init
 // ---------------------------------------------------------------------------
-const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, shipData, matesData, maidsData, towns, ruins, storyData, matesExtra, heroesData, monstersData, equipmentData, balanceData, shipTex, personTex, npcAtlasTex, heroesTex] =
+const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, shipData, matesData, maidsData, towns, ruins, storyData, matesExtra, heroesData, monstersData, equipmentData, balanceData, langZh, shipTex, personTex, npcAtlasTex, heroesTex] =
   await Promise.all([
     fetch('./assets/world_map.bin').then(r => r.arrayBuffer()),
     fetch('./assets/portmaps.bin').then(r => r.arrayBuffer()),
@@ -69,6 +83,8 @@ const [mapBuf, portMapBuf, ports, portMeta, buildingNames, villages, goodsData, 
     // balance.json overrides the global balance constants. Missing files keep built-ins.
     fetch('./assets/equipment.json').then(r => r.ok ? r.json() : null).catch(() => null),
     fetch('./assets/balance.json').then(r => r.ok ? r.json() : null).catch(() => null),
+    // lang_zh.json — 中文语言包（显示层翻译；缺失时保持英文）
+    fetch('./assets/lang_zh.json').then(r => r.ok ? r.json() : null).catch(() => null),
     loadTex('./assets/ship-tileset.png', false),
     loadTex('./assets/person-tileset.png', false),
     loadTex('./assets/npc_atlas.png', false),
@@ -1237,7 +1253,7 @@ function npcDialog(npc) {
   const portrait = (npc.charIdx !== undefined) ? npcPortraitUrl(npc.charIdx) : null;
   if (kind === 'man') {
     const p = ports[Math.floor(Math.random() * ports.length)];
-    showDialog('Sailor', `"Have you been to <b>${p.name}</b>?"`, portrait);
+    showDialog('Sailor', `"Have you been to <b>${dispPort(p)}</b>?"`, portrait);
   } else if (kind === 'woman') {
     showDialog('Townswoman', '"Do you like this place? ... How about me?"', portrait);
   } else if (kind === 'dog') {
@@ -1699,7 +1715,7 @@ function renderLandBattle() {
   if (!landBattle) { landBattlePanel.style.display = 'none'; return; }
   const e = landBattle.enemy;
   landBattlePanel.style.display = 'block';
-  document.getElementById('lb-enemy-name').textContent = `${e.name}`;
+  document.getElementById('lb-enemy-name').textContent = dispMonster(e.name);
   document.getElementById('lb-enemy-hp').style.width = `${Math.max(0, e.hp) / e.maxHp * 100}%`;
   const cv = document.getElementById('lb-enemy-img');
   drawDiscoveryInto(cv, e.img, villageIdByName(e.name));
@@ -2972,7 +2988,7 @@ function renderMarket(msg = '') {
                : pl < 0 ? ` <span class="neg">(${pl.toFixed(0)})</span>` : '';
     }
     html += `<tr${r.special ? ' class="specialty"' : ''}>` +
-      `<td><img class="good-icon" src="${goodIcon(r.name)}" alt="">${r.name}${r.special ? ' ★' : ''}</td>` +
+      `<td><img class="good-icon" src="${goodIcon(r.name)}" alt="">${dispGood(r.name)}${r.special ? ' ★' : ''}</td>` +
       `<td class="num">${r.buy ?? '—'}</td><td class="num">${sellCell}</td><td class="num">${hold}</td><td></td></tr>`;
   }
   div.innerHTML = html + '</table>';
@@ -3036,7 +3052,7 @@ function renderShipyard() {
     const m = f.mods ?? {};
     const modStr = ['guns', 'hull', 'cargo', 'speed'].filter(c => m[c]).map(c => `${c}+${m[c]}`).join(' ');
     html += `<tr><td><img class="ship-img" src="./assets/ships/${s.name.toLowerCase()}.png" alt=""></td>` +
-      `<td>${s.name}</td><td class="num">${Math.ceil(f.hull)}/${s.hull}</td>` +
+      `<td>${dispShip(s.name)}</td><td class="num">${Math.ceil(f.hull)}/${s.hull}</td>` +
       `<td class="num">${s.guns}</td><td class="num">${s.cargo}</td><td class="num">${s.speed.toFixed(1)}</td>` +
       `<td class="num">${modStr || '—'}</td><td></td></tr>`;
   });
@@ -3044,7 +3060,7 @@ function renderShipyard() {
     '<table><tr><th></th><th>ship</th><th>speed</th><th>tack</th><th>cargo</th><th>hull</th><th>guns</th><th>crew</th><th>price</th><th></th></tr>';
   for (const s of SHIPS) {
     html += `<tr><td><img class="ship-img" src="./assets/ships/${s.name.toLowerCase()}.png" alt=""></td>` +
-      `<td>${s.name}</td>` +
+      `<td>${dispShip(s.name)}</td>` +
       `<td class="num">${s.speed.toFixed(1)}</td><td class="num">${s.tacking}</td><td class="num">${s.cargo}</td>` +
       `<td class="num">${s.hull}</td><td class="num">${s.guns}</td>` +
       `<td class="num">${s.minCrew}-${s.maxCrew}</td>` +
@@ -3090,7 +3106,7 @@ function renderRefit(div) {
   const base = shipByName(f.ship);
   const s = shipStats(f);
   f.mods = f.mods ?? { guns: 0, hull: 0, cargo: 0, speed: 0 };
-  let html = `<h3 style="color:#ffd94d;margin:4px 0">Refit — ${f.ship}</h3>` +
+  let html = `<h3 style="color:#ffd94d;margin:4px 0">Refit — ${dispShip(f.ship)}</h3>` +
     '<table><tr><th>stat</th><th>base</th><th>now</th><th>upgrade</th><th></th></tr>';
   const rows = [
     ['guns', 'guns', base.guns, s.guns],
@@ -3169,7 +3185,7 @@ function renderMates() {
       const m = mid != null ? matesData[mid] : null;
       const div = document.createElement('div');
       div.className = 'cabin';
-      div.innerHTML = `<small>${i === 0 ? '★ ' : ''}${f.ship}</small><br><b>${t.label}</b><br>` +
+      div.innerHTML = `<small>${i === 0 ? '★ ' : ''}${dispShip(f.ship)}</small><br><b>${t.label}</b><br>` +
         `${m ? `${m.name} <small>(${t.stat} ${m[t.stat]})</small>` : '—'}<br><small>${t.desc}</small>`;
       if (m) {
         const b = document.createElement('button');
@@ -3196,7 +3212,7 @@ function renderMates() {
         const occ = assignedMate(i, j);
         if (occ != null && +occ !== exceptId) return;   // occupied by someone else
         const sel = mateCabin(exceptId) === cabinKey(i, j) ? ' selected' : '';
-        opts.push(`<option value="${i}:${j}"${sel}>${f.ship} · ${CABIN_TYPES[type].label}</option>`);
+        opts.push(`<option value="${i}:${j}"${sel}>${dispShip(f.ship)} · ${CABIN_TYPES[type].label}</option>`);
       });
     });
     return opts.join('');
@@ -3538,7 +3554,7 @@ const MENU_RENDER = {
     P.fleet.forEach((f, i) => {
       const s = shipByName(f.ship);
       html += `<tr><td><img class="ship-img" src="./assets/ships/${s.name.toLowerCase()}.png" alt=""></td>` +
-        `<td>${s.name}</td><td class="num">${Math.ceil(f.hull)}/${s.hull}</td>` +
+        `<td>${dispShip(s.name)}</td><td class="num">${Math.ceil(f.hull)}/${s.hull}</td>` +
         `<td class="num">${s.cargo}</td><td class="num">${s.guns}</td>` +
         `<td class="num">${s.minCrew}-${s.maxCrew}</td><td>${i === 0 ? 'flagship ★' : ''}</td></tr>`;
     });
@@ -3549,7 +3565,7 @@ const MENU_RENDER = {
     let html = `<p>sailors: <b>${P.crew}</b>/${fleetMaxCrew()} (minimum ${fleetMinCrew()})</p><p>` +
       P.fleet.map((f, i) => cabinsOf(i).map((type, j) => {
         const mid = assignedMate(i, j);
-        return `${i === 0 ? '★' : ''}${f.ship}/${CABIN_TYPES[type].label}: <b>${mid != null ? matesData[mid].name : '—'}</b>`;
+        return `${i === 0 ? '★' : ''}${dispShip(f.ship)}/${CABIN_TYPES[type].label}: <b>${mid != null ? matesData[mid].name : '—'}</b>`;
       }).join(' · ')).join('<br>') + '</p>';
     if (!P.mates.length) return html + '<p>No mates yet — meet them in bars.</p>';
     for (const id of P.mates) {
@@ -3597,7 +3613,7 @@ const MENU_RENDER = {
     let html = `<p>space: ${cargoUsed()}/${fleetCargoCap()}</p>` +
       '<table><tr><th>goods</th><th>qty</th><th>avg cost</th></tr>';
     for (const n of names) {
-      html += `<tr><td><img class="good-icon" src="${goodIcon(n)}" alt="">${n}</td>` +
+      html += `<tr><td><img class="good-icon" src="${goodIcon(n)}" alt="">${dispGood(n)}</td>` +
         `<td class="num">${P.cargo[n]}</td><td class="num">${avgBuy(n).toFixed(0)}</td></tr>`;
     }
     return html + '</table>';
@@ -3618,7 +3634,7 @@ const MENU_RENDER = {
       for (const v of list) {
         html += `<div class="mate-card"><canvas class="disc-thumb" data-img="${v.img[0]},${v.img[1]}" data-vid="${v.id}" ` +
           `width="49" height="49" style="image-rendering:pixelated;border:1px solid #8a6d3b;border-radius:3px"></canvas>` +
-          `<div class="mate-stats"><b>${v.name}</b> · ${fmtLonLat(v.x, v.y)}<br>${v.desc.slice(0, 90)}…</div></div>`;
+          `<div class="mate-stats"><b>${dispDiscName(v)}</b> · ${fmtLonLat(v.x, v.y)}<br>${dispDiscDesc(v).slice(0, 90)}…</div></div>`;
       }
     }
     return html;
@@ -3772,7 +3788,7 @@ function removePirate(p) {
 function startBattle(p) {
   if (battle) return;
   battle = { enemy: p, balls: [], cd: 0 };
-  showBanner(`Pirates — ${p.ship.name}!<small>SPACE to fire · sink them or outrun them (25 tiles)</small>`);
+  showBanner(`Pirates — ${dispShip(p.ship.name)}!<small>SPACE to fire · sink them or outrun them (25 tiles)</small>`);
   playSfx('./assets/sounds/engage.ogg');
 }
 
@@ -3812,13 +3828,13 @@ function captureEnemy() {
     P.fleet.push({ ship: e.ship.name, hull: Math.floor(e.ship.hull * 0.5) });
     gainFame('navalFame', 5);
     save();
-    showBanner(`${e.ship.name} captured!<small>she joins your fleet · fame +5</small>`);
+    showBanner(`${dispShip(e.ship.name)} captured!<small>she joins your fleet · fame +5</small>`);
   } else {
     const loot = Math.floor((300 + e.ship.price / 10) * (P.equipment.figurehead ? 1.25 : 1));
     P.gold += loot;
     gainFame('navalFame', 5);
     save();
-    showBanner(`${e.ship.name} captured!<small>sold for ${loot}g · fame +5</small>`);
+    showBanner(`${dispShip(e.ship.name)} captured!<small>sold for ${loot}g · fame +5</small>`);
   }
   removePirate(e);
   endBattle();
@@ -4047,7 +4063,7 @@ function updateBattle(dt) {
     `${curShip().name} — hull ${Math.ceil(flag().hull)}/${flagStats().hull} · crew ${P.crew}`;
   document.getElementById('battle-my-bar').style.width = `${flag().hull / flagStats().hull * 100}%`;
   document.getElementById('battle-enemy-label').textContent =
-    `${e.ship.name} — hull ${Math.ceil(e.hull)}/${e.ship.hull} · crew ${e.crew}`;
+    `${dispShip(e.ship.name)} — hull ${Math.ceil(e.hull)}/${e.ship.hull} · crew ${e.crew}`;
   document.getElementById('battle-enemy-bar').style.width = `${Math.max(0, e.hull) / e.ship.hull * 100}%`;
 
   for (let i = battle.balls.length - 1; i >= 0; i--) {
@@ -4104,8 +4120,8 @@ function goAshore(v) {
   gainFame('adventureFame', 1);
   save();
   playSfx('./assets/sounds/discover.ogg');
-  document.getElementById('discovery-name').textContent = v.name;
-  document.getElementById('discovery-text').textContent = v.desc;
+  document.getElementById('discovery-name').textContent = dispDiscName(v);
+  document.getElementById('discovery-text').textContent = dispDiscDesc(v);
   // crop 49px cell from the discoveries sheet (16 cols x 8 rows)
   // (GVO 素材包下会异步覆盖为 dol-rev 的 128px 大图)
   const cv = document.getElementById('discovery-img');
@@ -4345,7 +4361,7 @@ function refreshDevPanel() {
       const sel = document.getElementById('dev-tp-port');
       sel.innerHTML = ports
         .filter(p => p.name.toLowerCase().startsWith(q))
-        .map(p => `<option value="${p.id}">${p.name} (${fmtLonLat(p.x, p.y)})</option>`)
+        .map(p => `<option value="${p.id}">${dispPort(p)} (${fmtLonLat(p.x, p.y)})</option>`)
         .join('');
     };
   }
@@ -4362,7 +4378,7 @@ function refreshDevPanel() {
     const [x, z] = sailableNear(p.x, p.y);
     shipPos.set(x, 0.4, z);
     if (scene === 'land') { landPerson.visible = false; scene = 'sea'; camDist = 34; }
-    showBanner(`Teleported to ${p.name}`);
+    showBanner(`Teleported to ${dispPort(p)}`);
     save();
   };
 }
@@ -4374,7 +4390,7 @@ const DEV_RENDER = {
     for (const m of LAND_MONSTERS) {
       html += `<div class="mate-card"><canvas class="disc-thumb" data-img="${m.img[0]},${m.img[1]}" data-vid="${villageIdByName(m.name) ?? ''}" ` +
         `width="49" height="49" style="image-rendering:pixelated;border:1px solid #8a6d3b;border-radius:3px"></canvas>` +
-        `<div class="mate-stats"><b>${m.name}</b><br>hp ${m.hp} · atk ${m.atk} · def ${m.def} · ` +
+        `<div class="mate-stats"><b>${dispMonster(m.name)}</b><br>hp ${m.hp} · atk ${m.atk} · def ${m.def} · ` +
         `exp ${m.exp} · gold ${m.gold}</div></div>`;
     }
     return html;
@@ -4408,14 +4424,14 @@ const DEV_RENDER = {
         const found = discoveriesFound.has(v.id);
         html += `<div class="mate-card"><canvas class="disc-thumb" data-img="${v.img[0]},${v.img[1]}" data-vid="${v.id}" ` +
           `width="49" height="49" style="image-rendering:pixelated;border:1px solid #8a6d3b;border-radius:3px"></canvas>` +
-          `<div class="mate-stats"><b>${v.name}</b>${found ? ' ★' : ''} · ${fmtLonLat(v.x, v.y)}<br>` +
-          `${v.desc.slice(0, 90)}…</div></div>`;
+          `<div class="mate-stats"><b>${dispDiscName(v)}</b>${found ? ' ★' : ''} · ${fmtLonLat(v.x, v.y)}<br>` +
+          `${dispDiscDesc(v).slice(0, 90)}…</div></div>`;
       }
     }
     return html;
   },
   teleport() {
-    const opt = p => `<option value="${p.id}">${p.name} (${fmtLonLat(p.x, p.y)})</option>`;
+    const opt = p => `<option value="${p.id}">${dispPort(p)} (${fmtLonLat(p.x, p.y)})</option>`;
     return `<p>Teleport your fleet to any port's coast — type to filter by name prefix.</p>` +
       `<p><input id="dev-tp-filter" placeholder="e.g. lis…" style="width:100%;box-sizing:border-box;` +
       `font-size:15px;background:#1a2a4a;color:#ffe9a8;border:1px solid #8a6d3b;border-radius:6px;padding:6px"></p>` +
@@ -4698,6 +4714,27 @@ window.UW = {
   sync();
 }
 
+// language picker (English / 中文语言包 — 显示层翻译，见 lang_zh.json)
+{
+  const box = document.getElementById('lang-select');
+  const note = document.getElementById('lang-note');
+  const NOTES = {
+    en: '',
+    zh: '商品、发现物、港口、船名显示为中文（逻辑内部仍为英文，存档兼容）',
+  };
+  const sync = () => {
+    box.querySelectorAll('button').forEach(b =>
+      b.classList.toggle('active', b.dataset.lang === lang));
+    note.textContent = NOTES[lang] ?? '';
+  };
+  box.querySelectorAll('button').forEach(b => b.onclick = () => {
+    lang = b.dataset.lang;
+    localStorage.setItem('uw-lang', lang);
+    sync();
+  });
+  sync();
+}
+
 document.getElementById('ruin-continue').onclick = () => ruinNext();
 document.getElementById('ruin-leave').onclick = () => ruinFlee();
 document.getElementById('lb-attack').onclick = () => landBattleTurn('attack');
@@ -4868,7 +4905,7 @@ function tick() {
     const rn = battle || tn ? null : nearestSeaRuin();
     showHint(nearTreasure ? `<span class="key">E</span> dig for treasure!`
              : canBoard() ? `<span class="key">B</span> board them — melee fight!`
-             : p ? `<span class="key">E</span> enter ${p.name}`
+             : p ? `<span class="key">E</span> enter ${dispPort(p)}`
              : tn ? `<span class="key">E</span> enter ${tn.name}`
              : rn ? (ruinCooldown(rn.id) ? `${rn.name} — already explored`
                    : `<span class="key">E</span> explore ${rn.name}`)
@@ -4943,11 +4980,11 @@ function tick() {
     }
 
     // --- HUD ---
-    const portName = ports.find(p => p.id === portId)?.name ?? '';
+    const portName = dispPortById(portId);
     hudTop.innerHTML =
       `<b>${portName}</b> · day ${P.days}<br>` +
       `time: ${a} · gold: ${P.gold}g<br>` +
-      `fame: ${P.fame}${fameTitle() ? ' · ' + fameTitle() : ''} · ${P.fleet.length ? curShip().name + (P.fleet.length > 1 ? ' +' + (P.fleet.length - 1) : '') : 'no ship'}`;
+      `fame: ${P.fame}${fameTitle() ? ' · ' + fameTitle() : ''} · ${P.fleet.length ? dispShip(curShip().name) + (P.fleet.length > 1 ? ' +' + (P.fleet.length - 1) : '') : 'no ship'}`;
   }
 
   else {
@@ -5015,7 +5052,7 @@ function tick() {
       const d = Math.hypot(p.x - shipPos.x, p.y - shipPos.z);
       if (d < 5) {
         discovered.add(p.id);
-        showBanner(`${p.name}<small>port discovered — ${discovered.size} of ${ports.length}</small>`);
+        showBanner(`${dispPort(p)}<small>port discovered — ${discovered.size} of ${ports.length}</small>`);
       }
     }
   }
