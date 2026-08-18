@@ -100,7 +100,11 @@ download — overwrite the file in `game/assets/` to apply. See
 - `tools/` — asset pipeline scripts (require a local clone of uw2ol in `./uw2ol`)
   - `prepare_assets.py` — world map, tiles, sprites, ports
   - `prepare_port_assets.py` — port maps, buildings, goods, ships, mates, music
-- `tests/` — Playwright test suites
+  - `gvo/` — dol-rev (GVO Online) fusion pipeline: builds `gvo_map.json` and
+    the Chinese language pack `lang_zh.json` (see `tools/gvo/README.md`)
+  - `extract/` — one-off scripts that migrated main.js built-in data to JSON
+- `tests/` — Playwright test suites (incl. `verify_editors.py` /
+  `verify_gvo.py` / `verify_edits.py` for the editor suite and asset packs)
 - `tests/screenshots/` — screenshots captured by the test runs
 - `DESIGN.md` — design document
 - `SESSION.md` — development session log

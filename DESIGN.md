@@ -193,6 +193,31 @@ Backquote toggles: cheats (gold, ship speed), monster/mate/discovery
 encyclopedias, and **port teleport with case-insensitive prefix filter +
 double-click to teleport**. MD palette toggle lives here too.
 
+## 4.9 Data-driven overrides (editor-editable JSON)
+
+Most game data that started life hardcoded in `main.js` now lives in
+`assets/*.json`, loaded at startup and merged over the built-ins (missing
+files keep the built-ins, so the game is fully backward compatible):
+
+| File | Overrides | Editor |
+|---|---|---|
+| `story.json` | `STORYLINES` display fields (name/goal/reward/text; check/progress stay in code) | `editor/story.html` |
+| `heroes.json` | `HERO_ATTRS` + `GROWTH` formula coefficients | `editor/hero.html` |
+| `monsters.json` | `LAND_MONSTERS` | `editor/hero.html` |
+| `mates_extra.json` | original characters (mate id > 50, Isabella's party) | `editor/mates.html` |
+| `equipment.json` | `OUTFIT_ITEMS` / `CABIN_TYPES` / `CABIN_DEFAULTS` | `editor/outfit.html` |
+| `balance.json` | `BALANCE` (time scale, bank interest, drain/fatigue/death, pirates) | `editor/outfit.html` |
+| `gvo_map.json` | GVO asset mapping (goods icons, discovery artwork) | `editor/gvoimport.html` |
+| `lang_zh.json` | Chinese display names (goods/ports/ships/discoveries/monsters) | `gvo_ref` scripts |
+
+The **Chinese language pack** is display-layer only: internal logic keys
+(cargo, ship names, …) stay English, so saves are language-independent.
+The **GVO asset pack** and language are chosen on the start screen and
+persisted in localStorage (`uw-asset-pack`, `uw-lang`).
+
+Extraction/mapping scripts: `tools/extract/` (one-off main.js → JSON
+migrations) and `tools/gvo/` (dol-rev fusion pipeline, see its README).
+
 ## 5. Asset pipeline
 
 `tools/prepare_*.py` (need a local uw2ol clone; location-independent):
